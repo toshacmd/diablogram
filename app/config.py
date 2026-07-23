@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5-20251001"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    # Override for OpenAI-compatible third-party providers/resellers (e.g. NordRouter).
+    # Leave empty to use the official OpenAI API.
+    openai_base_url: str = ""
 
     session_encryption_key: str = ""
 

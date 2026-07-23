@@ -52,7 +52,10 @@ class OpenAICommentGenerator(CommentGenerator):
         from openai import AsyncOpenAI
 
         settings = get_settings()
-        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self._client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or None,
+        )
         self._model = settings.openai_model
 
     async def generate(self, post_text: str, persona_prompt: str) -> str:
