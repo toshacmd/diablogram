@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Аккаунты — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Аккаунты{% if filter_channel %} — закреплённые за «{{ filter_channel.title }}»{% endif %}</h1>
+{% if filter_channel %}<p class="muted"><a href="/accounts">Показать все аккаунты →</a></p>{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">Добавить аккаунт</h2>
+  <form method="post" action="/accounts/add">
+    <div class="row">
+      <div>
+        <label>Название (для себя)</label>
+        <input type="text" name="label" required placeholder="Иван П.">
+      </div>
+      <div>
+        <label>Персона</label>
+        <select name="persona_id">
+          <option value="">— без персоны —</option>
+          {% for p in personas %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Суточный лимит комментариев</label>
+        <input type="number" name="daily_comment_cap" value="20" min="0">
+      </div>
+    </div>
+    <label>Session-строка (Telethon StringSession)</label>
+    <textarea name="session_string" required></textarea>
+    <label>Фирменная подпись</label>
+    <textarea name="signature" placeholder="🔥 подписывайтесь!"></textarea>
+    <h2>Прокси (опционально)</h2>
+    <div class="row">
+      <div>
+        <label>Тип</label>
+        <select name="proxy_type">
+          <option value="">— без прокси —</option>
+          <option value="socks5">SOCKS5</option>
+          <option value="socks4">SOCKS4</option>
+          <option value="http">HTTP</option>
+        </select>
+      </div>
+      <div><label>Хост</label><input type="text" name="proxy_host"></div>
+      <div><label>Порт</label><input type="number" name="proxy_port"></div>
+      <div><label>Логин</label><input type="text" name="proxy_username"></div>
+      <div><label>Пароль</label><input type="password" name="proxy_password"></div>
+    </div>
+    <button type="submit">Добавить аккаунт</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Массовое редактирование подписи</h2>
+  <form method="post" action="/accounts/signatures/bulk">
+    <label>Новый текст подписи</label>
+    <textarea name="signature"></textarea>
+    <label><input type="checkbox" name="apply_all" style="width:auto"> Применить ко всем аккаунтам (игнорирует отметки ниже)</label>
+
+    <table>
+      <tr><th></th><th>Аккаунт</th><th>Статус</th><th>Персона</th><th>Подпись</th><th>Каналов</th><th>Лимит/день</th><th></th></tr>
+      {% for a in accounts %}
+      <tr>
+        <td><input type="checkbox" name="account_ids" value="{{ a.id }}" style="width:auto"></td>
+        <td><a href="/accounts/{{ a.id }}">{{ a.label }}</a></td>
+        <td><span class="badge {{ a.status.value }}">{{ a.status.value }}</span></td>
+        <td class="muted">{{ a.persona.name if a.persona else '—' }}</td>
+        <td class="muted">{{ (a.signature or '')[:40] }}</td>
+        <td>{{ assigned_channel_ids.get(a.id, []) | length }}</td>
+        <td>{{ a.daily_comment_cap }}</td>
+        <td><a href="/accounts/{{ a.id }}">Открыть</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="muted">Аккаунтов пока нет</td></tr>
+      {% endfor %}
+    </table>
+    <p class="muted">Отметьте нужные аккаунты галочками слева и нажмите «Применить», либо поставьте «Применить ко всем».</p>
+    <button type="submit">Применить подпись к отмеченным</button>
+  </form>
+</div>
+{% endblock %}

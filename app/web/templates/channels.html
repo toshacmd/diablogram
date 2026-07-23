@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Каналы — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Каналы</h1>
+
+<div class="card">
+  <h2 style="margin-top:0">Добавить канал</h2>
+  {% if not accounts %}
+    <p class="muted">Сначала добавьте хотя бы один аккаунт — он нужен, чтобы получить данные канала из Telegram.</p>
+  {% else %}
+  <form method="post" action="/channels/add">
+    <div class="row">
+      <div>
+        <label>Через какой аккаунт получить данные канала</label>
+        <select name="account_id">
+          {% for a in accounts %}
+            <option value="{{ a.id }}">{{ a.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Username или ссылка на канал (например @mychannel)</label>
+        <input type="text" name="username_or_link" required placeholder="@mychannel">
+      </div>
+    </div>
+    <button type="submit">Добавить</button>
+  </form>
+  {% endif %}
+</div>
+
+<table>
+  <tr><th>Канал</th><th>Username</th><th>Закреплено аккаунтов</th><th>Статус</th><th></th></tr>
+  {% for c in channels %}
+  <tr>
+    <td>{{ c.title }}</td>
+    <td class="muted">{{ c.username or '—' }}</td>
+    <td><a href="/accounts?channel_id={{ c.id }}">{{ assignment_counts.get(c.id, 0) }}</a></td>
+    <td><span class="badge {{ 'active' if c.is_active else 'disabled' }}">{{ 'активен' if c.is_active else 'выключен' }}</span></td>
+    <td>
+      <form class="inline" method="post" action="/channels/{{ c.id }}/toggle">
+        <button type="submit" class="secondary">{{ 'Выключить' if c.is_active else 'Включить' }}</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">Каналов пока нет</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Настройки — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Глобальные настройки</h1>
+
+<form method="post" action="/settings">
+  <div class="card">
+    <h2 style="margin-top:0">Количество комментаторов на пост</h2>
+    <p class="muted">Минимум гарантирован всегда (хотя бы 1 комментарий на пост).</p>
+    <div class="row">
+      <div><label>Минимум</label><input type="number" name="commenters_min" value="{{ s.commenters_min }}" min="1"></div>
+      <div><label>Максимум</label><input type="number" name="commenters_max" value="{{ s.commenters_max }}" min="1"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Задержка перед публикацией комментария</h2>
+    <p class="muted">У каждого выбранного аккаунта — своя случайная задержка из этого диапазона.</p>
+    <div class="row">
+      <div><label>Минимум, сек</label><input type="number" name="delay_min_seconds" value="{{ s.delay_min_seconds }}" min="0"></div>
+      <div><label>Максимум, сек</label><input type="number" name="delay_max_seconds" value="{{ s.delay_max_seconds }}" min="0"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Контент-фильтр</h2>
+    <label><input type="checkbox" name="content_filter_enabled" style="width:auto" {{ 'checked' if s.content_filter_enabled else '' }}> Включён</label>
+    <label>Стоп-слова/темы (по одному на строку)</label>
+    <textarea name="stop_terms" rows="6">{{ s.stop_terms | join('\n') }}</textarea>
+  </div>
+
+  <button type="submit">Сохранить</button>
+</form>
+{% endblock %}

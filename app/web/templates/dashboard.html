@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Обзор — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Обзор</h1>
+
+<div class="row">
+  <div class="card">
+    <div class="muted">Активные каналы</div>
+    <div style="font-size:1.6rem">{{ total_channels }}</div>
+  </div>
+  <div class="card">
+    <div class="muted">Аккаунтов всего</div>
+    <div style="font-size:1.6rem">{{ total_accounts }}</div>
+  </div>
+  <div class="card">
+    <div class="muted">Комментариев сегодня</div>
+    <div style="font-size:1.6rem">{{ posted_today }}</div>
+  </div>
+  <div class="card">
+    <div class="muted">По статусам</div>
+    <div>
+      {% for status, count in by_status.items() %}
+        <span class="badge {{ status }}">{{ status }}: {{ count }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<h2>Последние записи журнала</h2>
+<table>
+  <tr><th>Когда</th><th>Аккаунт</th><th>Канал</th><th>Статус</th><th>Текст</th></tr>
+  {% for log in recent %}
+  <tr>
+    <td class="muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td>{{ log.account_id }}</td>
+    <td>{{ log.channel_id }}</td>
+    <td><span class="badge {{ log.status.value }}">{{ log.status.value }}</span></td>
+    <td>{{ (log.full_text or '')[:120] }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">Пока пусто</td></tr>
+  {% endfor %}
+</table>
+<p class="muted"><a href="/logs">Полный журнал →</a></p>
+{% endblock %}

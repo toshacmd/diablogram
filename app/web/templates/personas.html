@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Персоны — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Персоны (тон/личность)</h1>
+<p class="muted">Готовые пресеты + свои варианты. Назначаются на аккаунте.</p>
+
+<div class="card">
+  <h2 style="margin-top:0">Новая персона</h2>
+  <form method="post" action="/personas/add">
+    <label>Название</label>
+    <input type="text" name="name" required placeholder="Саркастичный">
+    <label>Промпт-описание тона (на русском)</label>
+    <textarea name="prompt_text" required placeholder="саркастичный, слегка ироничный подписчик, любит подколоть, но не переходит на грубость"></textarea>
+    <button type="submit">Добавить</button>
+  </form>
+</div>
+
+{% for p in personas %}
+<div class="card">
+  <h2 style="margin-top:0">{{ p.name }} {% if p.is_builtin %}<span class="badge active">пресет</span>{% endif %}</h2>
+  <form method="post" action="/personas/{{ p.id }}/update">
+    <label>Название</label>
+    <input type="text" name="name" value="{{ p.name }}" required>
+    <label>Промпт-описание тона</label>
+    <textarea name="prompt_text" required>{{ p.prompt_text }}</textarea>
+    <button type="submit">Сохранить</button>
+    {% if not p.is_builtin %}
+    <button type="submit" formaction="/personas/{{ p.id }}/delete" class="danger" onclick="return confirm('Удалить персону {{ p.name }}?')">Удалить</button>
+    {% endif %}
+  </form>
+</div>
+{% endfor %}
+{% endblock %}

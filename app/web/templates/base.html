@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Diablogram AI{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <span class="brand">Diablogram AI</span>
+    <a href="/" class="{{ 'active' if active == 'dashboard' else '' }}">Обзор</a>
+    <a href="/channels" class="{{ 'active' if active == 'channels' else '' }}">Каналы</a>
+    <a href="/accounts" class="{{ 'active' if active == 'accounts' else '' }}">Аккаунты</a>
+    <a href="/personas" class="{{ 'active' if active == 'personas' else '' }}">Персоны</a>
+    <a href="/settings" class="{{ 'active' if active == 'settings' else '' }}">Настройки</a>
+    <a href="/logs" class="{{ 'active' if active == 'logs' else '' }}">Журнал</a>
+  </nav>
+  <main>
+    {% if request.query_params.get('flash') %}
+      <div class="flash">{{ request.query_params.get('flash') }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Журнал — Diablogram AI{% endblock %}
+{% block content %}
+<h1>Журнал комментариев</h1>
+
+<table>
+  <tr><th>Когда</th><th>Канал</th><th>Аккаунт</th><th>Персона</th><th>Статус</th><th>Текст</th></tr>
+  {% for log in logs %}
+  <tr>
+    <td class="muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td>{{ log.channel.title if log.channel else log.channel_id }}</td>
+    <td>{{ log.account.label if log.account else log.account_id }}</td>
+    <td class="muted">{{ log.persona_name or '—' }}</td>
+    <td>
+      <span class="badge {{ log.status.value }}">{{ log.status.value }}</span>
+      {% if log.error %}<div class="muted">{{ log.error }}</div>{% endif %}
+    </td>
+    <td>{{ log.full_text or log.generated_text }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Записей пока нет</td></tr>
+  {% endfor %}
+</table>
+
+<div class="row">
+  {% if page > 1 %}<a href="/logs?page={{ page - 1 }}">← Назад</a>{% endif %}
+  <a href="/logs?page={{ page + 1 }}">Вперёд →</a>
+</div>
+{% endblock %}

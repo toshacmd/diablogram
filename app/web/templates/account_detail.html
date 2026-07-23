@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ account.label }} — Diablogram AI{% endblock %}
+{% block content %}
+<h1>{{ account.label }} <span class="badge {{ account.status.value }}">{{ account.status.value }}</span></h1>
+{% if account.status_note %}<p class="muted">{{ account.status_note }}</p>{% endif %}
+<p><a href="/accounts">← Все аккаунты</a></p>
+
+<div class="card">
+  <h2 style="margin-top:0">Основные настройки</h2>
+  <form method="post" action="/accounts/{{ account.id }}/update">
+    <div class="row">
+      <div>
+        <label>Название</label>
+        <input type="text" name="label" value="{{ account.label }}" required>
+      </div>
+      <div>
+        <label>Персона / тон</label>
+        <select name="persona_id">
+          <option value="">— без персоны —</option>
+          {% for p in personas %}
+            <option value="{{ p.id }}" {{ 'selected' if account.persona_id == p.id else '' }}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Суточный лимит комментариев</label>
+        <input type="number" name="daily_comment_cap" value="{{ account.daily_comment_cap }}" min="0">
+      </div>
+    </div>
+    <label>Фирменная подпись</label>
+    <textarea name="signature">{{ account.signature or '' }}</textarea>
+
+    <h2>Прокси</h2>
+    <div class="row">
+      <div>
+        <label>Тип</label>
+        <select name="proxy_type">
+          <option value="" {{ 'selected' if not account.proxy_type else '' }}>— без прокси —</option>
+          <option value="socks5" {{ 'selected' if account.proxy_type == 'socks5' else '' }}>SOCKS5</option>
+          <option value="socks4" {{ 'selected' if account.proxy_type == 'socks4' else '' }}>SOCKS4</option>
+          <option value="http" {{ 'selected' if account.proxy_type == 'http' else '' }}>HTTP</option>
+        </select>
+      </div>
+      <div><label>Хост</label><input type="text" name="proxy_host" value="{{ account.proxy_host or '' }}"></div>
+      <div><label>Порт</label><input type="number" name="proxy_port" value="{{ account.proxy_port or '' }}"></div>
+      <div><label>Логин</label><input type="text" name="proxy_username" value="{{ account.proxy_username or '' }}"></div>
+      <div><label>Новый пароль (оставьте пустым, чтобы не менять)</label><input type="password" name="proxy_password"></div>
+    </div>
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Сессия и статус</h2>
+  <form method="post" action="/accounts/{{ account.id }}/toggle-disabled">
+    <button type="submit" class="secondary">
+      {{ 'Включить аккаунт' if account.status.value == 'disabled' else 'Приостановить аккаунт' }}
+    </button>
+  </form>
+  <form method="post" action="/accounts/{{ account.id }}/update-session" style="margin-top:1rem">
+    <label>Заменить session-строку (сбросит статус на «активен», например после бана)</label>
+    <textarea name="session_string" required></textarea>
+    <button type="submit">Обновить сессию</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Закреплённые каналы</h2>
+  <form method="post" action="/accounts/{{ account.id }}/assignments">
+    <div class="checkbox-grid">
+      {% for c in channels %}
+      <label>
+        <input type="checkbox" name="channel_ids" value="{{ c.id }}" {{ 'checked' if c.id in assigned else '' }}>
+        {{ c.title }}
+      </label>
+      {% else %}
+      <span class="muted">Сначала добавьте каналы</span>
+      {% endfor %}
+    </div>
+    <button type="submit">Сохранить закрепление</button>
+  </form>
+</div>
+{% endblock %}
