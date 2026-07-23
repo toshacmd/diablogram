@@ -16,6 +16,11 @@ class Channel(Base):
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(255))
 
+    # Invite link (t.me/+... or t.me/joinchat/...), needed to join accounts to
+    # private channels that have no public @username — a bare numeric id can't
+    # be resolved by an account that has never seen the channel before.
+    invite_link: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)

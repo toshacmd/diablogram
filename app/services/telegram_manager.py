@@ -8,6 +8,7 @@ talks to Telegram.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 import socks
@@ -17,6 +18,7 @@ from telethon.errors import (
     ChatWriteForbiddenError,
     FloodWaitError,
     PeerFloodError,
+    UserAlreadyParticipantError,
     UserBannedInChannelError,
     UserDeactivatedBanError,
     UserDeactivatedError,
@@ -33,7 +35,18 @@ logger = logging.getLogger(__name__)
 
 _PROXY_TYPES = {"socks5": socks.SOCKS5, "socks4": socks.SOCKS4, "http": socks.HTTP}
 
+# Matches t.me/joinchat/<hash> and t.me/+<hash> (and telegram.me/... variants) —
+# private-channel invite links, as opposed to public @usernames.
+_INVITE_HASH_RE = re.compile(r"t(?:elegram)?\.me/(?:joinchat/|\+)([\w-]+)")
+
 NewPostHandler = Callable[[int, Message], Awaitable[None]]
+
+
+def extract_invite_hash(text: str | int | None) -> str | None:
+    if not text:
+        return None
+    match = _INVITE_HASH_RE.search(str(text))
+    return match.group(1) if match else None
 
 
 class TelegramManager:
@@ -147,7 +160,27 @@ class TelegramManager:
     # Actions
     # ------------------------------------------------------------------ #
 
-    async def join_channel(self, account_id: int, username_or_id: str | int):
+    async def join_by_invite(self, account_id: int, invite_hash: str):
+        """Join (or, if already a member, just resolve) a private channel via
+        its invite link hash — the only way to reach a channel that has no
+        public @username and that this account has never seen before."""
+        client = self.get_client(account_id)
+        try:
+            updates = await client(functions.messages.ImportChatInviteRequest(invite_hash))
+            return updates.chats[0]
+        except UserAlreadyParticipantError:
+            info = await client(functions.messages.CheckChatInviteRequest(invite_hash))
+            return info.chat
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+
+    async def join_channel(self, account_id: int, username_or_id: str | int, invite_link: str | None = None):
+        invite_hash = extract_invite_hash(invite_link) or extract_invite_hash(username_or_id)
+        if invite_hash:
+            return await self.join_by_invite(account_id, invite_hash)
+
         client = self.get_client(account_id)
         try:
             entity = await client.get_entity(username_or_id)
@@ -159,6 +192,11 @@ class TelegramManager:
             raise AccountBannedError(str(e)) from e
 
     async def resolve_channel(self, account_id: int, username_or_link: str):
+        invite_hash = extract_invite_hash(username_or_link)
+        if invite_hash:
+            # Resolving a private channel requires joining it — there's no
+            # way to fetch chat info from a bare invite hash otherwise.
+            return await self.join_by_invite(account_id, invite_hash)
         client = self.get_client(account_id)
         return await client.get_entity(username_or_link)
 
@@ -183,29 +221,33 @@ class TelegramManager:
             raise AccountBannedError(str(e)) from e
 
 
-async def resolve_channel_standalone(account, username_or_link: str) -> tuple[int, str, str | None]:
+async def resolve_channel_standalone(account, username_or_link: str) -> tuple[int, str, str | None, str | None]:
     """One-off channel resolution using a throwaway connection — used by the
     web process, which (unlike the worker) doesn't keep accounts connected.
 
-    Returns (marked_tg_channel_id, title, username). The marked id (Telethon's
-    get_peer_id form, e.g. -100xxxxxxxxxx) is what must be stored and reused
-    for events/sending, per Telethon's own recommendation for id stability.
+    Returns (marked_tg_channel_id, title, username, invite_link). The marked id
+    (Telethon's get_peer_id form, e.g. -100xxxxxxxxxx) is what must be stored
+    and reused for events/sending, per Telethon's own recommendation for id
+    stability. invite_link is only set when `username_or_link` was itself an
+    invite link — save it on the Channel so future accounts can join too
+    (a bare numeric id can't be resolved by an account that's never seen it).
     """
     temp = TelegramManager()
     await temp.connect_account(account)
     try:
         entity = await temp.resolve_channel(account.id, username_or_link)
-        return get_peer_id(entity), entity.title, getattr(entity, "username", None)
+        invite_link = username_or_link if extract_invite_hash(username_or_link) else None
+        return get_peer_id(entity), entity.title, getattr(entity, "username", None), invite_link
     finally:
         await temp.disconnect_all()
 
 
-async def join_channel_standalone(account, username_or_link: str | int) -> None:
+async def join_channel_standalone(account, username_or_id: str | int, invite_link: str | None = None) -> None:
     """One-off join using a throwaway connection, mirroring resolve_channel_standalone."""
     temp = TelegramManager()
     await temp.connect_account(account)
     try:
-        await temp.join_channel(account.id, username_or_link)
+        await temp.join_channel(account.id, username_or_id, invite_link=invite_link)
     finally:
         await temp.disconnect_all()
 

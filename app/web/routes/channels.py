@@ -44,7 +44,9 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
         if account is None:
             return RedirectResponse("/channels?flash=Аккаунт не найден", status_code=303)
 
-        tg_channel_id, title, username = await resolve_channel_standalone(account, username_or_link.strip())
+        tg_channel_id, title, username, invite_link = await resolve_channel_standalone(
+            account, username_or_link.strip()
+        )
 
         existing = (
             await session.execute(select(Channel).where(Channel.tg_channel_id == tg_channel_id))
@@ -52,9 +54,18 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
         if existing:
             existing.title = title
             existing.username = username
+            existing.invite_link = invite_link or existing.invite_link
             existing.is_active = True
         else:
-            session.add(Channel(tg_channel_id=tg_channel_id, title=title, username=username, is_active=True))
+            session.add(
+                Channel(
+                    tg_channel_id=tg_channel_id,
+                    title=title,
+                    username=username,
+                    invite_link=invite_link,
+                    is_active=True,
+                )
+            )
         await session.commit()
 
     return RedirectResponse(f"/channels?flash=Канал «{title}» добавлен", status_code=303)

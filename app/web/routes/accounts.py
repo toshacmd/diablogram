@@ -219,7 +219,7 @@ async def update_assignments(request: Request, account_id: int):
                 continue
             target = channel.username or channel.tg_channel_id
             try:
-                await join_channel_standalone(account, target)
+                await join_channel_standalone(account, target, invite_link=channel.invite_link)
             except (AccountLimitedError, AccountBannedError, Exception) as e:  # noqa: BLE001
                 join_errors.append(f"{channel.title}: {e}")
 
