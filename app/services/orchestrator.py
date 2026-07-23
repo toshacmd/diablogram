@@ -11,6 +11,7 @@ import random
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload
 from telethon.tl.custom.message import Message
 
 from app.db import async_session_factory
@@ -92,6 +93,7 @@ async def handle_new_post(channel_tg_id: int, message: Message) -> None:
             (
                 await session.execute(
                     select(Account)
+                    .options(joinedload(Account.persona))
                     .join(AccountChannelAssignment, AccountChannelAssignment.account_id == Account.id)
                     .where(AccountChannelAssignment.channel_id == channel.id)
                 )
@@ -151,7 +153,7 @@ async def _post_comment(
 ) -> None:
     async with async_session_factory() as session:
         log_entry = await session.get(CommentLog, log_id)
-        account = await session.get(Account, account_id)
+        account = await session.get(Account, account_id, options=[joinedload(Account.persona)])
         if log_entry is None or account is None:
             return
 
