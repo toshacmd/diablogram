@@ -170,8 +170,20 @@ class TelegramManager:
         public @username and that this account has never seen before."""
         client = self.get_client(account_id)
         try:
-            updates = await client(functions.messages.ImportChatInviteRequest(invite_hash))
-            return updates.chats[0]
+            result = await client(functions.messages.ImportChatInviteRequest(invite_hash))
+            # Depending on the invite, Telegram either returns the chat info
+            # directly (an Updates-like object with `.chats`) or wraps it one
+            # level deeper in `ChatInviteJoinResultOk.updates.chats`.
+            if hasattr(result, "chats"):
+                chats = result.chats
+            elif hasattr(result, "updates") and hasattr(result.updates, "chats"):
+                chats = result.updates.chats
+            else:
+                raise RuntimeError(
+                    f"Unsupported invite join result type: {type(result).__name__} "
+                    "(likely requires interactive web verification)"
+                )
+            return chats[0]
         except UserAlreadyParticipantError:
             info = await client(functions.messages.CheckChatInviteRequest(invite_hash))
             return info.chat
