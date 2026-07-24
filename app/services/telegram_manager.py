@@ -11,7 +11,6 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 
-import socks
 from telethon import TelegramClient, events, functions
 from telethon.errors import (
     AuthKeyUnregisteredError,
@@ -33,7 +32,9 @@ from app.services.exceptions import AccountBannedError, AccountLimitedError
 
 logger = logging.getLogger(__name__)
 
-_PROXY_TYPES = {"socks5": socks.SOCKS5, "socks4": socks.SOCKS4, "http": socks.HTTP}
+# python_socks (and Telethon's PySocks-compatible fallback) both accept these
+# as plain strings directly — no need for the socks module's numeric constants.
+_VALID_PROXY_TYPES = {"socks5", "socks4", "http"}
 
 # Matches t.me/joinchat/<hash> and t.me/+<hash> (and telegram.me/... variants) —
 # private-channel invite links, as opposed to public @usernames.
@@ -69,8 +70,11 @@ class TelegramManager:
     def _build_client(self, account) -> TelegramClient:
         proxy = None
         if account.proxy_type and account.proxy_host and account.proxy_port:
+            proxy_type = account.proxy_type.lower()
+            if proxy_type not in _VALID_PROXY_TYPES:
+                raise ValueError(f"Unknown proxy type: {account.proxy_type!r}")
             proxy = (
-                _PROXY_TYPES[account.proxy_type.lower()],
+                proxy_type,
                 account.proxy_host,
                 account.proxy_port,
                 True,
