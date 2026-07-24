@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.services.orchestrator import handle_new_post, scheduler
+from app.services.orchestrator import handle_new_post, reconcile_orphaned_comments, scheduler
 from app.services.seed import seed_builtin_personas
 from app.services.sync import refresh_connections_and_watchers
 from app.services.telegram_manager import manager
@@ -30,6 +30,7 @@ async def _refresh_loop() -> None:
 
 async def main() -> None:
     await seed_builtin_personas()
+    await reconcile_orphaned_comments()
     manager.set_new_post_handler(handle_new_post)
     scheduler.start()
 

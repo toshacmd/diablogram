@@ -74,6 +74,32 @@ async def _is_eligible(session, account: Account) -> bool:
     return posted_today < account.daily_comment_cap
 
 
+async def reconcile_orphaned_comments() -> None:
+    """Mark stale `scheduled` rows as failed on worker startup.
+
+    Scheduled jobs live only in APScheduler's in-memory store — if the worker
+    restarts (deploy, crash) between scheduling a comment and its delayed
+    run time, the job is lost but the CommentLog row stays stuck at
+    `scheduled` forever. Called once at startup so the journal stays honest.
+    """
+    async with async_session_factory() as session:
+        now = dt.datetime.now(dt.timezone.utc)
+        stale = (
+            await session.execute(
+                select(CommentLog).where(
+                    CommentLog.status == CommentStatus.SCHEDULED,
+                    CommentLog.scheduled_for < now,
+                )
+            )
+        ).scalars().all()
+        for log_entry in stale:
+            log_entry.status = CommentStatus.FAILED
+            log_entry.error = "Worker restarted before this comment could be published"
+        if stale:
+            await session.commit()
+            logger.info("Marked %d orphaned scheduled comment(s) as failed after restart", len(stale))
+
+
 async def handle_new_post(channel_tg_id: int, message: Message) -> None:
     post_text = (message.message or "").strip()
     if not post_text:
