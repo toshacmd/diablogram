@@ -17,6 +17,10 @@ from app.services.telegram_manager import manager
 
 logger = logging.getLogger(__name__)
 
+# Channels currently missing a watcher — tracked so the warning logs only on
+# the transition into that state, not every 60s sync cycle it persists.
+_channels_without_watcher: set[int] = set()
+
 
 async def refresh_connections_and_watchers() -> None:
     async with async_session_factory() as session:
@@ -68,7 +72,12 @@ async def refresh_connections_and_watchers() -> None:
             watcher = (active or limited or [None])[0]
 
             if watcher is None:
-                logger.warning("No connected account available to watch channel %s (%s)", channel.title, channel.id)
+                if channel.id not in _channels_without_watcher:
+                    logger.warning(
+                        "No connected account available to watch channel %s (%s)", channel.title, channel.id
+                    )
+                    _channels_without_watcher.add(channel.id)
                 continue
 
+            _channels_without_watcher.discard(channel.id)
             await manager.set_watcher(channel.tg_channel_id, watcher.id)

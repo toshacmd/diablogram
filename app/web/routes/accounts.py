@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.crypto import encrypt
 from app.db import async_session_factory
-from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, Persona
+from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, CommentLog, Persona
 from app.services.exceptions import AccountBannedError, AccountLimitedError
 from app.services.telegram_manager import join_channel_standalone
 from app.web.templating import templates
@@ -190,6 +191,23 @@ async def toggle_disabled(account_id: int):
             account.status = AccountStatus.DISABLED
         await session.commit()
     return RedirectResponse(f"/accounts/{account_id}", status_code=303)
+
+
+@router.post("/accounts/{account_id}/delete")
+async def delete_account(account_id: int):
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+        label = account.label
+        # Cleared explicitly rather than relying on DB-level ON DELETE CASCADE
+        # alone — SQLite (used in dev/tests) doesn't enforce FKs by default,
+        # so this keeps behavior identical across SQLite and Postgres.
+        await session.execute(sa_delete(CommentLog).where(CommentLog.account_id == account_id))
+        await session.execute(sa_delete(ChannelBan).where(ChannelBan.account_id == account_id))
+        await session.delete(account)
+        await session.commit()
+    return RedirectResponse(f"/accounts?flash=Аккаунт «{label}» удалён", status_code=303)
 
 
 @router.post("/accounts/{account_id}/assignments")

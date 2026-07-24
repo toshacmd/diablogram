@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 
 from app.db import async_session_factory
-from app.models import Account, AccountChannelAssignment, Channel
+from app.models import Account, AccountChannelAssignment, Channel, ChannelBan, CommentLog
 from app.services.exceptions import AccountBannedError, AccountLimitedError
 from app.services.telegram_manager import resolve_channel_standalone
 from app.web.templating import templates
@@ -88,3 +89,20 @@ async def toggle_channel(channel_id: int):
             channel.is_active = not channel.is_active
             await session.commit()
     return RedirectResponse("/channels", status_code=303)
+
+
+@router.post("/channels/{channel_id}/delete")
+async def delete_channel(channel_id: int):
+    async with async_session_factory() as session:
+        channel = await session.get(Channel, channel_id)
+        if channel is None:
+            return RedirectResponse("/channels?flash=Канал не найден", status_code=303)
+        title = channel.title
+        # Cleared explicitly rather than relying on DB-level ON DELETE CASCADE
+        # alone — SQLite (used in dev/tests) doesn't enforce FKs by default,
+        # so this keeps behavior identical across SQLite and Postgres.
+        await session.execute(sa_delete(CommentLog).where(CommentLog.channel_id == channel_id))
+        await session.execute(sa_delete(ChannelBan).where(ChannelBan.channel_id == channel_id))
+        await session.delete(channel)
+        await session.commit()
+    return RedirectResponse(f"/channels?flash=Канал «{title}» удалён", status_code=303)

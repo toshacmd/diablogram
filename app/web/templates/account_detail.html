@@ -166,6 +166,15 @@
         </form>
       </fieldset>
 
+      <fieldset class="fieldset" style="margin-top:20px">
+        <div class="fieldset__legend">Удаление аккаунта</div>
+        <p class="fieldset__note">Безвозвратно — вместе с аккаунтом удалится и его журнал комментариев.</p>
+        <form method="post" action="/accounts/{{ account.id }}/delete"
+              onsubmit="return confirm('Удалить аккаунт «{{ account.label }}» безвозвратно? Журнал его комментариев тоже будет удалён.')">
+          <button type="submit" class="btn btn-danger" style="width:100%">Удалить аккаунт</button>
+        </form>
+      </fieldset>
+
     </div>
   </div>
 </div>
