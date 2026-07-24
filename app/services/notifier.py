@@ -36,3 +36,10 @@ async def notify_account_limited(account_label: str, retry_after_seconds: int) -
 
 async def notify_account_banned(account_label: str, reason: str) -> None:
     await notify_owner(f"🚫 Аккаунт «{account_label}» заблокирован/не авторизован: {reason}")
+
+
+async def notify_channel_banned(account_label: str, channel_title: str, reason: str) -> None:
+    await notify_owner(
+        f"⛔ Аккаунт «{account_label}» забанен в канале «{channel_title}» — закрепление снято, "
+        f"аккаунт остаётся активным для остальных каналов.\n{reason}"
+    )

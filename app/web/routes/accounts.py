@@ -5,7 +5,7 @@ from sqlalchemy.orm import joinedload
 
 from app.crypto import encrypt
 from app.db import async_session_factory
-from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, Persona
+from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, Persona
 from app.services.exceptions import AccountBannedError, AccountLimitedError
 from app.services.telegram_manager import join_channel_standalone
 from app.web.templating import templates
@@ -106,6 +106,18 @@ async def account_detail(request: Request, account_id: int):
             .scalars()
             .all()
         )
+        channel_bans = (
+            (
+                await session.execute(
+                    select(ChannelBan)
+                    .options(joinedload(ChannelBan.channel))
+                    .where(ChannelBan.account_id == account_id)
+                    .order_by(ChannelBan.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     return templates.TemplateResponse(
         request,
@@ -116,6 +128,7 @@ async def account_detail(request: Request, account_id: int):
             "personas": personas,
             "channels": channels,
             "assigned": assigned,
+            "channel_bans": channel_bans,
         },
     )
 

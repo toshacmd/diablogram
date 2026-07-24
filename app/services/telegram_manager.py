@@ -28,7 +28,7 @@ from telethon.utils import get_peer_id
 
 from app.config import get_settings
 from app.crypto import decrypt
-from app.services.exceptions import AccountBannedError, AccountLimitedError
+from app.services.exceptions import AccountBannedError, AccountLimitedError, ChannelBannedError
 
 logger = logging.getLogger(__name__)
 
@@ -227,13 +227,12 @@ class TelegramManager:
             raise AccountLimitedError(e.seconds) from e
         except PeerFloodError as e:
             raise AccountLimitedError(3600) from e
-        except (
-            UserBannedInChannelError,
-            ChatWriteForbiddenError,
-            UserDeactivatedBanError,
-            UserDeactivatedError,
-            AuthKeyUnregisteredError,
-        ) as e:
+        except (UserBannedInChannelError, ChatWriteForbiddenError) as e:
+            # Restricted in *this* channel/chat only (e.g. a moderator banned
+            # or kicked the account) — the account itself is otherwise fine.
+            raise ChannelBannedError(str(e)) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            # The account itself is dead — banned/deactivated by Telegram globally.
             raise AccountBannedError(str(e)) from e
 
 

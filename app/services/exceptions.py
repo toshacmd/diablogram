@@ -7,4 +7,11 @@ class AccountLimitedError(Exception):
 
 
 class AccountBannedError(Exception):
-    """Raised when an account is banned / deactivated / can no longer act."""
+    """Raised when an account itself is banned / deactivated / can no longer
+    act at all — e.g. UserDeactivatedBanError, AuthKeyUnregisteredError."""
+
+
+class ChannelBannedError(Exception):
+    """Raised when an account is banned/restricted from writing in one
+    specific channel/chat (e.g. by a moderator) — the account itself is
+    otherwise fine and can still be used elsewhere."""

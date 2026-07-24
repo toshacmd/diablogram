@@ -20,6 +20,7 @@ from app.models import (
     AccountChannelAssignment,
     AccountStatus,
     Channel,
+    ChannelBan,
     CommentLog,
     CommentStatus,
     GlobalSettings,
@@ -27,7 +28,7 @@ from app.models import (
 from app.services import notifier
 from app.services.ai_generator import get_comment_generator
 from app.services.content_filter import check_text
-from app.services.exceptions import AccountBannedError, AccountLimitedError
+from app.services.exceptions import AccountBannedError, AccountLimitedError, ChannelBannedError
 from app.services.telegram_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,26 @@ async def _post_comment(
             log_entry.error = str(e)
             await session.commit()
             await notifier.notify_account_banned(account.label, str(e))
+            return
+        except ChannelBannedError as e:
+            # Restricted in this one channel only (e.g. by a moderator) — the
+            # account itself is fine, just drop its assignment to this channel.
+            assignment = (
+                await session.execute(
+                    select(AccountChannelAssignment).where(
+                        AccountChannelAssignment.account_id == account_id,
+                        AccountChannelAssignment.channel_id == channel_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if assignment is not None:
+                await session.delete(assignment)
+            session.add(ChannelBan(account_id=account_id, channel_id=channel_id, reason=str(e)))
+            log_entry.status = CommentStatus.FAILED
+            log_entry.error = str(e)
+            await session.commit()
+            channel = await session.get(Channel, channel_id)
+            await notifier.notify_channel_banned(account.label, channel.title if channel else str(channel_id), str(e))
             return
         except Exception as e:  # noqa: BLE001
             logger.exception("Failed to send comment for log %s", log_id)

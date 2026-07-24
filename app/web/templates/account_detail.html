@@ -80,4 +80,21 @@
     <button type="submit">Сохранить закрепление</button>
   </form>
 </div>
+
+{% if channel_bans %}
+<div class="card">
+  <h2 style="margin-top:0">Забанен в этих каналах</h2>
+  <p class="muted">Закрепление за этими каналами снято автоматически — аккаунт остаётся активным для остальных.</p>
+  <table>
+    <tr><th>Канал</th><th>Когда</th><th>Причина</th></tr>
+    {% for ban in channel_bans %}
+    <tr>
+      <td>{{ ban.channel.title if ban.channel else ban.channel_id }}</td>
+      <td class="muted">{{ ban.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="muted">{{ ban.reason }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
 {% endblock %}
