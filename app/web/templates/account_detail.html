@@ -1,100 +1,241 @@
 {% extends "base.html" %}
+{% from "_macros.html" import account_status %}
+
 {% block title %}{{ account.label }} — Diablogram AI{% endblock %}
+{% block page_title %}{{ account.label }}{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">
+    Аккаунт #{{ account.id }}{% if account.status_note %} · {{ account.status_note }}{% endif %}
+  </div>
+{% endblock %}
+{% block page_actions %}
+  {{ account_status(account.status.value) }}
+  <a href="/accounts" class="btn btn-sm">Все аккаунты</a>
+{% endblock %}
+
 {% block content %}
-<h1>{{ account.label }} <span class="badge {{ account.status.value }}">{{ account.status.value }}</span></h1>
-{% if account.status_note %}<p class="muted">{{ account.status_note }}</p>{% endif %}
-<p><a href="/accounts">← Все аккаунты</a></p>
 
-<div class="card">
-  <h2 style="margin-top:0">Основные настройки</h2>
-  <form method="post" action="/accounts/{{ account.id }}/update">
-    <div class="row">
+<a href="/accounts" class="backlink">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m15 18-6-6 6-6"/>
+  </svg>
+  Все аккаунты
+</a>
+
+<div class="grid split" style="margin-bottom:18px">
+
+  {# ---------- Настройки аккаунта ---------- #}
+  <div class="card" style="margin:0">
+    <div class="card__head">
       <div>
-        <label>Название</label>
-        <input type="text" name="label" value="{{ account.label }}" required>
+        <h2>Настройки аккаунта</h2>
+        <div class="card__desc">Как этот аккаунт ведёт себя при комментировании</div>
       </div>
+    </div>
+    <div class="card__body">
+      <form method="post" action="/accounts/{{ account.id }}/update">
+
+        <fieldset class="fieldset">
+          <div class="fieldset__legend">Основное</div>
+          <div class="field-grid cols-3">
+            <div class="field">
+              <label for="ac-label">Название</label>
+              <input id="ac-label" type="text" name="label" value="{{ account.label }}" required autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="ac-persona">Персона / тон</label>
+              <select id="ac-persona" name="persona_id">
+                <option value="">— без персоны —</option>
+                {% for p in personas %}
+                  <option value="{{ p.id }}" {{ 'selected' if account.persona_id == p.id }}>{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="ac-cap">Лимит в сутки</label>
+              <input id="ac-cap" type="number" name="daily_comment_cap" value="{{ account.daily_comment_cap }}" min="0">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="ac-sig">Фирменная подпись</label>
+            <textarea id="ac-sig" name="signature" style="min-height:56px">{{ account.signature or '' }}</textarea>
+            <div class="field__hint">Добавляется в конец каждого комментария этого аккаунта.</div>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <div class="fieldset__legend">
+            Прокси
+            {% if account.proxy_host %}
+              <span class="chip">{{ account.proxy_type or '?' }} · {{ account.proxy_host }}:{{ account.proxy_port or '—' }}</span>
+            {% else %}
+              <span class="chip is-empty">не задан</span>
+            {% endif %}
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="ac-ptype">Тип</label>
+              <select id="ac-ptype" name="proxy_type">
+                <option value="" {{ 'selected' if not account.proxy_type }}>— без прокси —</option>
+                <option value="socks5" {{ 'selected' if account.proxy_type == 'socks5' }}>SOCKS5</option>
+                <option value="socks4" {{ 'selected' if account.proxy_type == 'socks4' }}>SOCKS4</option>
+                <option value="http" {{ 'selected' if account.proxy_type == 'http' }}>HTTP</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="ac-phost">Хост</label>
+              <input id="ac-phost" type="text" name="proxy_host" value="{{ account.proxy_host or '' }}" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="ac-pport">Порт</label>
+              <input id="ac-pport" type="number" name="proxy_port" value="{{ account.proxy_port or '' }}">
+            </div>
+            <div class="field">
+              <label for="ac-puser">Логин</label>
+              <input id="ac-puser" type="text" name="proxy_username" value="{{ account.proxy_username or '' }}" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="ac-ppass">Новый пароль</label>
+              <input id="ac-ppass" type="password" name="proxy_password" autocomplete="new-password" placeholder="не менять">
+              <div class="field__hint">Пусто — оставить текущий.</div>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="btn-row" style="margin-top:20px">
+          <button type="submit" class="btn btn-primary">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ---------- Сессия и статус ---------- #}
+  <div class="card" style="margin:0">
+    <div class="card__head">
       <div>
-        <label>Персона / тон</label>
-        <select name="persona_id">
-          <option value="">— без персоны —</option>
-          {% for p in personas %}
-            <option value="{{ p.id }}" {{ 'selected' if account.persona_id == p.id else '' }}>{{ p.name }}</option>
+        <h2>Сессия и статус</h2>
+        <div class="card__desc">Управление доступом аккаунта к Telegram</div>
+      </div>
+    </div>
+    <div class="card__body">
+
+      <div class="kv">
+        <div class="kv__row">
+          <span class="kv__key">Текущий статус</span>
+          <span class="kv__val">{{ account_status(account.status.value) }}</span>
+        </div>
+        {% if account.status_note %}
+        <div class="kv__row">
+          <span class="kv__key">Причина</span>
+          <span class="kv__val small muted">{{ account.status_note }}</span>
+        </div>
+        {% endif %}
+        {% if account.limited_until %}
+        <div class="kv__row">
+          <span class="kv__key">Ограничен до</span>
+          <span class="kv__val mono">{{ account.limited_until.strftime('%d.%m.%Y %H:%M') }}</span>
+        </div>
+        {% endif %}
+        <div class="kv__row">
+          <span class="kv__key">Добавлен</span>
+          <span class="kv__val mono dim">{{ account.created_at.strftime('%d.%m.%Y') }}</span>
+        </div>
+      </div>
+
+      <form method="post" action="/accounts/{{ account.id }}/toggle-disabled" style="margin-top:18px"
+            onsubmit="return confirm('{{ 'Включить аккаунт обратно в работу?' if account.status.value == 'disabled' else 'Приостановить аккаунт? Он перестанет комментировать до повторного включения.' }}')">
+        <button type="submit" class="btn {{ 'btn-primary' if account.status.value == 'disabled' else '' }}" style="width:100%">
+          {{ 'Включить аккаунт' if account.status.value == 'disabled' else 'Приостановить аккаунт' }}
+        </button>
+      </form>
+
+      <fieldset class="fieldset" style="margin-top:20px">
+        <div class="fieldset__legend">Замена сессии</div>
+        <p class="fieldset__note">Сбрасывает статус на «активен» — например, после бана и перевыпуска сессии.</p>
+        <form method="post" action="/accounts/{{ account.id }}/update-session"
+              onsubmit="return confirm('Заменить session-строку? Текущая сессия будет перезаписана, а статус сброшен на «активен».')">
+          <div class="field">
+            <label for="ac-session">Новая session-строка</label>
+            <textarea id="ac-session" name="session_string" class="is-mono" required
+                      placeholder="1BQANOTEuMTA4LjU2LjE..." spellcheck="false" style="min-height:96px"></textarea>
+          </div>
+          <div class="btn-row" style="margin-top:14px">
+            <button type="submit" class="btn btn-danger">Обновить сессию</button>
+          </div>
+        </form>
+      </fieldset>
+
+    </div>
+  </div>
+</div>
+
+{# ---------- Закреплённые каналы ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Закреплённые каналы</h2>
+      <div class="card__desc">При сохранении аккаунт автоматически вступит в новые каналы</div>
+    </div>
+    <div class="card__actions"><span class="count-pill">{{ assigned | length }} из {{ channels | length }}</span></div>
+  </div>
+  <div class="card__body">
+    <form method="post" action="/accounts/{{ account.id }}/assignments">
+      {% if channels %}
+        <div class="check-grid">
+          {% for c in channels %}
+          <label class="check">
+            <input type="checkbox" name="channel_ids" value="{{ c.id }}" {{ 'checked' if c.id in assigned }}>
+            <span class="check__text">
+              {{ c.title }}
+              <span class="check__hint">{{ c.username or 'приватный' }}</span>
+            </span>
+          </label>
           {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label>Суточный лимит комментариев</label>
-        <input type="number" name="daily_comment_cap" value="{{ account.daily_comment_cap }}" min="0">
-      </div>
-    </div>
-    <label>Фирменная подпись</label>
-    <textarea name="signature">{{ account.signature or '' }}</textarea>
-
-    <h2>Прокси</h2>
-    <div class="row">
-      <div>
-        <label>Тип</label>
-        <select name="proxy_type">
-          <option value="" {{ 'selected' if not account.proxy_type else '' }}>— без прокси —</option>
-          <option value="socks5" {{ 'selected' if account.proxy_type == 'socks5' else '' }}>SOCKS5</option>
-          <option value="socks4" {{ 'selected' if account.proxy_type == 'socks4' else '' }}>SOCKS4</option>
-          <option value="http" {{ 'selected' if account.proxy_type == 'http' else '' }}>HTTP</option>
-        </select>
-      </div>
-      <div><label>Хост</label><input type="text" name="proxy_host" value="{{ account.proxy_host or '' }}"></div>
-      <div><label>Порт</label><input type="number" name="proxy_port" value="{{ account.proxy_port or '' }}"></div>
-      <div><label>Логин</label><input type="text" name="proxy_username" value="{{ account.proxy_username or '' }}"></div>
-      <div><label>Новый пароль (оставьте пустым, чтобы не менять)</label><input type="password" name="proxy_password"></div>
-    </div>
-    <button type="submit">Сохранить</button>
-  </form>
-</div>
-
-<div class="card">
-  <h2 style="margin-top:0">Сессия и статус</h2>
-  <form method="post" action="/accounts/{{ account.id }}/toggle-disabled">
-    <button type="submit" class="secondary">
-      {{ 'Включить аккаунт' if account.status.value == 'disabled' else 'Приостановить аккаунт' }}
-    </button>
-  </form>
-  <form method="post" action="/accounts/{{ account.id }}/update-session" style="margin-top:1rem">
-    <label>Заменить session-строку (сбросит статус на «активен», например после бана)</label>
-    <textarea name="session_string" required></textarea>
-    <button type="submit">Обновить сессию</button>
-  </form>
-</div>
-
-<div class="card">
-  <h2 style="margin-top:0">Закреплённые каналы</h2>
-  <form method="post" action="/accounts/{{ account.id }}/assignments">
-    <div class="checkbox-grid">
-      {% for c in channels %}
-      <label>
-        <input type="checkbox" name="channel_ids" value="{{ c.id }}" {{ 'checked' if c.id in assigned else '' }}>
-        {{ c.title }}
-      </label>
+        </div>
+        <div class="btn-row" style="margin-top:18px">
+          <button type="submit" class="btn btn-primary">Сохранить закрепление</button>
+        </div>
       {% else %}
-      <span class="muted">Сначала добавьте каналы</span>
-      {% endfor %}
-    </div>
-    <button type="submit">Сохранить закрепление</button>
-  </form>
+        <div class="empty" style="padding:28px 0">
+          <div class="empty__title">Каналов пока нет</div>
+          <div class="empty__text">Добавьте канал, чтобы закрепить за ним этот аккаунт.</div>
+          <a href="/channels" class="btn btn-sm btn-primary" style="margin-top:6px">К каналам</a>
+        </div>
+      {% endif %}
+    </form>
+  </div>
 </div>
 
+{# ---------- Баны по каналам ---------- #}
 {% if channel_bans %}
 <div class="card">
-  <h2 style="margin-top:0">Забанен в этих каналах</h2>
-  <p class="muted">Закрепление за этими каналами снято автоматически — аккаунт остаётся активным для остальных.</p>
-  <table>
-    <tr><th>Канал</th><th>Когда</th><th>Причина</th></tr>
-    {% for ban in channel_bans %}
-    <tr>
-      <td>{{ ban.channel.title if ban.channel else ban.channel_id }}</td>
-      <td class="muted">{{ ban.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-      <td class="muted">{{ ban.reason }}</td>
-    </tr>
-    {% endfor %}
-  </table>
+  <div class="card__head">
+    <div>
+      <h2>Баны по каналам</h2>
+      <div class="card__desc">Закрепление снято автоматически — для остальных каналов аккаунт продолжает работать</div>
+    </div>
+    <div class="card__actions"><span class="count-pill">{{ channel_bans | length }}</span></div>
+  </div>
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Канал</th><th class="col-tight">Когда</th><th>Причина</th></tr>
+        </thead>
+        <tbody>
+          {% for ban in channel_bans %}
+          <tr>
+            <td>{{ ban.channel.title if ban.channel else '#' ~ ban.channel_id }}</td>
+            <td class="col-tight"><span class="mono dim">{{ ban.created_at.strftime('%d.%m.%Y %H:%M') }}</span></td>
+            <td class="col-text mono small">{{ ban.reason }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 {% endif %}
+
 {% endblock %}

@@ -1,45 +1,160 @@
 {% extends "base.html" %}
-{% block title %}Обзор — Diablogram AI{% endblock %}
-{% block content %}
-<h1>Обзор</h1>
+{% from "_macros.html" import comment_status, account_status, empty_row %}
 
-<div class="row">
-  <div class="card">
-    <div class="muted">Активные каналы</div>
-    <div style="font-size:1.6rem">{{ total_channels }}</div>
+{% block title %}Обзор — Diablogram AI{% endblock %}
+{% block page_title %}Обзор{% endblock %}
+{% block page_sub %}<div class="topbar__sub">Состояние флота аккаунтов и активность за {{ activity_days }} дней</div>{% endblock %}
+{% block page_actions %}
+  <a href="/logs" class="btn btn-sm">Полный журнал</a>
+  <a href="/accounts" class="btn btn-sm btn-primary">Аккаунты</a>
+{% endblock %}
+
+{% block content %}
+
+{# ---------- Метрики ---------- #}
+<div class="grid stats" style="margin-bottom:18px">
+  <div class="stat tone-ok">
+    <div class="stat__label">Опубликовано сегодня</div>
+    <div class="stat__value">{{ posted_today }}</div>
+    <div class="stat__meta">за {{ activity_days }} дней — <span class="num">{{ activity_total }}</span></div>
   </div>
-  <div class="card">
-    <div class="muted">Аккаунтов всего</div>
-    <div style="font-size:1.6rem">{{ total_accounts }}</div>
+
+  <div class="stat">
+    <div class="stat__label">В очереди на публикацию</div>
+    <div class="stat__value">{{ scheduled_pending }}</div>
+    <div class="stat__meta">комментариев ждут своей задержки</div>
   </div>
-  <div class="card">
-    <div class="muted">Комментариев сегодня</div>
-    <div style="font-size:1.6rem">{{ posted_today }}</div>
+
+  <div class="stat {{ 'tone-warn' if active_accounts == 0 and total_accounts else 'tone-off' }}">
+    <div class="stat__label">Аккаунты</div>
+    <div class="stat__value">{{ active_accounts }}<span class="unit">/ {{ total_accounts }}</span></div>
+    <div class="stat__meta">активных из всех заведённых</div>
   </div>
-  <div class="card">
-    <div class="muted">По статусам</div>
-    <div>
-      {% for status, count in by_status.items() %}
-        <span class="badge {{ status }}">{{ status }}: {{ count }}</span>
-      {% endfor %}
+
+  <div class="stat {{ 'tone-bad' if failed_today else 'tone-off' }}">
+    <div class="stat__label">Ошибок сегодня</div>
+    <div class="stat__value">{{ failed_today }}</div>
+    <div class="stat__meta">
+      {% if failed_today %}<a href="/logs">разобрать в журнале →</a>{% else %}публикация идёт без сбоев{% endif %}
     </div>
   </div>
 </div>
 
-<h2>Последние записи журнала</h2>
-<table>
-  <tr><th>Когда</th><th>Аккаунт</th><th>Канал</th><th>Статус</th><th>Текст</th></tr>
-  {% for log in recent %}
-  <tr>
-    <td class="muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-    <td>{{ log.account_id }}</td>
-    <td>{{ log.channel_id }}</td>
-    <td><span class="badge {{ log.status.value }}">{{ log.status.value }}</span></td>
-    <td>{{ (log.full_text or '')[:120] }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="5" class="muted">Пока пусто</td></tr>
-  {% endfor %}
-</table>
-<p class="muted"><a href="/logs">Полный журнал →</a></p>
+{# ---------- График активности + здоровье флота ---------- #}
+<div class="grid split" style="margin-bottom:18px">
+
+  <div class="card" style="margin:0">
+    <div class="card__head">
+      <div>
+        <h2>Публикации по дням</h2>
+        <div class="card__desc">Успешно отправленные комментарии, последние {{ activity_days }} дней</div>
+      </div>
+      <div class="card__actions"><span class="count-pill">всего {{ activity_total }}</span></div>
+    </div>
+    <div class="card__body">
+      <div class="chart-scale">
+        <span>пик: {{ activity_max }}</span>
+        <span>{{ activity[0].label }} — {{ activity[-1].label }}</span>
+      </div>
+      <div class="chart">
+        {% for d in activity %}
+          {% set h = (d.count * 100 // activity_max) if activity_max else 0 %}
+          <div class="chart__col {{ 'is-today' if d.is_today }}" title="{{ d.label }} — {{ d.count }}">
+            <div class="chart__track">
+              <div class="chart__bar {{ 'is-zero' if not d.count }}" style="--h: {{ h }}%"></div>
+            </div>
+            <div class="chart__tick">{{ d.tick }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin:0">
+    <div class="card__head">
+      <div>
+        <h2>Состояние аккаунтов</h2>
+        <div class="card__desc">Кто сейчас может комментировать</div>
+      </div>
+    </div>
+    <div class="card__body">
+      {% if total_accounts %}
+        <div class="meter">
+          {% for key in ['active', 'limited', 'banned', 'disabled'] %}
+            {% set n = by_status.get(key, 0) %}
+            {% if n %}<span class="meter__seg is-{{ key }}" style="--w: {{ (n * 100 / total_accounts) | round(1) }}%"></span>{% endif %}
+          {% endfor %}
+        </div>
+        <div class="legend">
+          {% for key in ['active', 'limited', 'banned', 'disabled'] %}
+            {% set n = by_status.get(key, 0) %}
+            <div class="legend__row">
+              <span class="legend__dot is-{{ key }}"></span>
+              <span class="legend__name">{{ {'active':'Активны','limited':'Ограничены','banned':'Забанены','disabled':'Выключены'}[key] }}</span>
+              <span class="legend__val">{{ n }}</span>
+              <span class="legend__pct">{{ (n * 100 / total_accounts) | round | int }}%</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty" style="padding:24px 0">
+          <div class="empty__title">Аккаунтов пока нет</div>
+          <div class="empty__text">Добавьте первый аккаунт, чтобы начать комментировать.</div>
+          <a href="/accounts" class="btn btn-sm btn-primary" style="margin-top:6px">Добавить аккаунт</a>
+        </div>
+      {% endif %}
+    </div>
+    <div class="card__foot">
+      <span class="small dim">Каналов подключено</span>
+      <span class="count-pill">{{ total_channels }} активных{% if all_channels > total_channels %} / {{ all_channels }}{% endif %}</span>
+      <a href="/channels" class="small" style="margin-left:auto">Управлять →</a>
+    </div>
+  </div>
+</div>
+
+{# ---------- Последние записи ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Последние комментарии</h2>
+      <div class="card__desc">Свежие записи журнала по всем каналам</div>
+    </div>
+    <div class="card__actions"><a href="/logs" class="btn btn-sm">Открыть журнал</a></div>
+  </div>
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th class="col-tight">Когда</th>
+            <th>Канал</th>
+            <th>Аккаунт</th>
+            <th class="col-tight">Статус</th>
+            <th>Текст</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in recent %}
+          <tr>
+            <td class="col-tight"><span class="mono dim">{{ log.created_at.strftime('%d.%m %H:%M') }}</span></td>
+            <td class="truncate">{{ log.channel.title if log.channel else '#' ~ log.channel_id }}</td>
+            <td class="truncate">
+              {% if log.account %}
+                <a class="cell-link" href="/accounts/{{ log.account_id }}">{{ log.account.label }}</a>
+              {% else %}
+                <span class="dim">#{{ log.account_id }}</span>
+              {% endif %}
+            </td>
+            <td class="col-tight">{{ comment_status(log.status.value) }}</td>
+            <td class="col-text"><div class="clamp-2">{{ log.full_text or log.generated_text or '—' }}</div></td>
+          </tr>
+          {% else %}
+          {{ empty_row(5, 'Записей пока нет — как только появится новый пост в канале, здесь будет комментарий') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

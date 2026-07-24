@@ -1,79 +1,245 @@
 {% extends "base.html" %}
+{% from "_macros.html" import account_status, empty_row %}
+
 {% block title %}Аккаунты — Diablogram AI{% endblock %}
+{% block page_title %}Аккаунты{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">
+    {% if filter_channel %}
+      Закреплённые за каналом «{{ filter_channel.title }}»
+    {% else %}
+      Телеграм-аккаунты, от имени которых публикуются комментарии
+    {% endif %}
+  </div>
+{% endblock %}
+{% block page_actions %}
+  <a href="/channels" class="btn btn-sm">Каналы</a>
+{% endblock %}
+
 {% block content %}
-<h1>Аккаунты{% if filter_channel %} — закреплённые за «{{ filter_channel.title }}»{% endif %}</h1>
-{% if filter_channel %}<p class="muted"><a href="/accounts">Показать все аккаунты →</a></p>{% endif %}
 
-<div class="card">
-  <h2 style="margin-top:0">Добавить аккаунт</h2>
-  <form method="post" action="/accounts/add">
-    <div class="row">
-      <div>
-        <label>Название (для себя)</label>
-        <input type="text" name="label" required placeholder="Иван П.">
+{% if filter_channel %}
+<div class="toolbar">
+  <span class="badge info is-plain">Фильтр: {{ filter_channel.title }}</span>
+  <a href="/accounts" class="btn btn-sm btn-ghost">Сбросить и показать все</a>
+</div>
+{% endif %}
+
+{# ---------- Добавление аккаунта (свёрнуто, чтобы не давить таблицу) ---------- #}
+<details class="card" {{ 'open' if not accounts }}>
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить аккаунт</span>
+      <span class="summary__desc">Session-строка Telethon, персона, лимиты и прокси</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    <form method="post" action="/accounts/add">
+
+      <fieldset class="fieldset">
+        <div class="fieldset__legend">Основное</div>
+        <div class="field-grid cols-3">
+          <div class="field">
+            <label for="add-label">Название</label>
+            <input id="add-label" type="text" name="label" required placeholder="Иван П." autocomplete="off">
+            <div class="field__hint">Видно только вам, в Telegram не показывается.</div>
+          </div>
+          <div class="field">
+            <label for="add-persona">Персона</label>
+            <select id="add-persona" name="persona_id">
+              <option value="">— без персоны —</option>
+              {% for p in personas %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            </select>
+            <div class="field__hint">Задаёт тон генерируемых комментариев.</div>
+          </div>
+          <div class="field">
+            <label for="add-cap">Лимит комментариев в сутки</label>
+            <input id="add-cap" type="number" name="daily_comment_cap" value="20" min="0">
+            <div class="field__hint">Защита от блокировки — не больше N в день.</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="add-session">Session-строка (Telethon StringSession)</label>
+          <textarea id="add-session" name="session_string" class="is-mono" required
+                    placeholder="1BQANOTEuMTA4LjU2LjE..." spellcheck="false"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="add-signature">Фирменная подпись</label>
+          <textarea id="add-signature" name="signature" placeholder="🔥 подписывайтесь!" style="min-height:56px"></textarea>
+          <div class="field__hint">Добавляется в конец каждого комментария этого аккаунта.</div>
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <div class="fieldset__legend">Прокси</div>
+        <p class="fieldset__note">Опционально. Свой прокси на аккаунт снижает риск связать аккаунты между собой.</p>
+        <div class="field-grid">
+          <div class="field">
+            <label for="add-ptype">Тип</label>
+            <select id="add-ptype" name="proxy_type">
+              <option value="">— без прокси —</option>
+              <option value="socks5">SOCKS5</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+          <div class="field span-2">
+            <label for="add-phost">Хост</label>
+            <input id="add-phost" type="text" name="proxy_host" placeholder="127.0.0.1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="add-pport">Порт</label>
+            <input id="add-pport" type="number" name="proxy_port" placeholder="1080">
+          </div>
+          <div class="field">
+            <label for="add-puser">Логин</label>
+            <input id="add-puser" type="text" name="proxy_username" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="add-ppass">Пароль</label>
+            <input id="add-ppass" type="password" name="proxy_password" autocomplete="new-password">
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="btn-row" style="margin-top:20px">
+        <button type="submit" class="btn btn-primary">Добавить аккаунт</button>
       </div>
+    </form>
+  </div>
+</details>
+
+{# ---------- Таблица + массовое действие (одна форма) ---------- #}
+<form method="post" action="/accounts/signatures/bulk">
+  <div class="card">
+    <div class="card__head">
       <div>
-        <label>Персона</label>
-        <select name="persona_id">
-          <option value="">— без персоны —</option>
-          {% for p in personas %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
-        </select>
+        <h2>Список аккаунтов</h2>
+        <div class="card__desc">Отметьте строки, чтобы применить массовое действие</div>
       </div>
-      <div>
-        <label>Суточный лимит комментариев</label>
-        <input type="number" name="daily_comment_cap" value="20" min="0">
+      <div class="card__actions"><span class="count-pill">{{ accounts | length }}</span></div>
+    </div>
+
+    <div class="card__body is-flush">
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th class="col-tight">
+                <input type="checkbox" id="sel-all" aria-label="Выбрать все">
+              </th>
+              <th>Аккаунт</th>
+              <th class="col-tight">Статус</th>
+              <th>Персона</th>
+              <th>Прокси</th>
+              <th class="col-tight">Каналов</th>
+              <th class="col-tight">Лимит/день</th>
+              <th>Подпись</th>
+              <th class="col-tight"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in accounts %}
+            <tr>
+              <td class="col-tight">
+                <input type="checkbox" name="account_ids" value="{{ a.id }}" aria-label="Выбрать {{ a.label }}">
+              </td>
+              <td>
+                <a class="cell-link" href="/accounts/{{ a.id }}">{{ a.label }}</a>
+                {% if a.status_note %}<div class="cell-sub truncate" style="max-width:220px">{{ a.status_note }}</div>{% endif %}
+              </td>
+              <td class="col-tight">{{ account_status(a.status.value) }}</td>
+              <td class="muted">{{ a.persona.name if a.persona else '—' }}</td>
+              <td>
+                {% if a.proxy_host %}
+                  <span class="chip">{{ a.proxy_type or '?' }} · {{ a.proxy_host }}:{{ a.proxy_port or '—' }}</span>
+                {% else %}
+                  <span class="chip is-empty">без прокси</span>
+                {% endif %}
+              </td>
+              <td class="col-num">{{ assigned_channel_ids.get(a.id, []) | length }}</td>
+              <td class="col-num">{{ a.daily_comment_cap }}</td>
+              <td class="col-text truncate" style="max-width:220px">
+                {{ a.signature or '' }}{% if not a.signature %}<span class="dim">—</span>{% endif %}
+              </td>
+              <td class="col-actions">
+                <a href="/accounts/{{ a.id }}" class="btn btn-sm btn-ghost">Открыть</a>
+              </td>
+            </tr>
+            {% else %}
+            {{ empty_row(9, 'Аккаунтов пока нет — добавьте первый через форму выше') }}
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-    <label>Session-строка (Telethon StringSession)</label>
-    <textarea name="session_string" required></textarea>
-    <label>Фирменная подпись</label>
-    <textarea name="signature" placeholder="🔥 подписывайтесь!"></textarea>
-    <h2>Прокси (опционально)</h2>
-    <div class="row">
-      <div>
-        <label>Тип</label>
-        <select name="proxy_type">
-          <option value="">— без прокси —</option>
-          <option value="socks5">SOCKS5</option>
-          <option value="socks4">SOCKS4</option>
-          <option value="http">HTTP</option>
-        </select>
+
+    {% if accounts %}
+    <div class="bulk-bar">
+      <div class="fieldset__legend">Массовое действие</div>
+      <div class="field-grid cols-2" style="align-items:start">
+        <div class="field">
+          <label for="bulk-sig">Новый текст подписи</label>
+          <textarea id="bulk-sig" name="signature" placeholder="🔥 подписывайтесь!" style="min-height:64px"></textarea>
+        </div>
+        <div class="field">
+          <label>Кому применить</label>
+          <label class="check-card">
+            <input type="checkbox" name="apply_all">
+            <span class="check__text">
+              Всем аккаунтам
+              <span class="check__hint">Игнорирует отметки в таблице</span>
+            </span>
+          </label>
+          <div class="btn-row" style="margin-top:6px">
+            <button type="submit" class="btn btn-primary">Применить подпись</button>
+            <span class="small dim" data-selection-label>ничего не отмечено</span>
+          </div>
+        </div>
       </div>
-      <div><label>Хост</label><input type="text" name="proxy_host"></div>
-      <div><label>Порт</label><input type="number" name="proxy_port"></div>
-      <div><label>Логин</label><input type="text" name="proxy_username"></div>
-      <div><label>Пароль</label><input type="password" name="proxy_password"></div>
     </div>
-    <button type="submit">Добавить аккаунт</button>
-  </form>
-</div>
+    {% endif %}
+  </div>
+</form>
 
-<div class="card">
-  <h2 style="margin-top:0">Массовое редактирование подписи</h2>
-  <form method="post" action="/accounts/signatures/bulk">
-    <label>Новый текст подписи</label>
-    <textarea name="signature"></textarea>
-    <label><input type="checkbox" name="apply_all" style="width:auto"> Применить ко всем аккаунтам (игнорирует отметки ниже)</label>
+<script>
+(function () {
+  var master = document.getElementById('sel-all');
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[name="account_ids"]'));
+  var label = document.querySelector('[data-selection-label]');
+  if (!boxes.length) { if (master) master.disabled = true; return; }
 
-    <table>
-      <tr><th></th><th>Аккаунт</th><th>Статус</th><th>Персона</th><th>Подпись</th><th>Каналов</th><th>Лимит/день</th><th></th></tr>
-      {% for a in accounts %}
-      <tr>
-        <td><input type="checkbox" name="account_ids" value="{{ a.id }}" style="width:auto"></td>
-        <td><a href="/accounts/{{ a.id }}">{{ a.label }}</a></td>
-        <td><span class="badge {{ a.status.value }}">{{ a.status.value }}</span></td>
-        <td class="muted">{{ a.persona.name if a.persona else '—' }}</td>
-        <td class="muted">{{ (a.signature or '')[:40] }}</td>
-        <td>{{ assigned_channel_ids.get(a.id, []) | length }}</td>
-        <td>{{ a.daily_comment_cap }}</td>
-        <td><a href="/accounts/{{ a.id }}">Открыть</a></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="8" class="muted">Аккаунтов пока нет</td></tr>
-      {% endfor %}
-    </table>
-    <p class="muted">Отметьте нужные аккаунты галочками слева и нажмите «Применить», либо поставьте «Применить ко всем».</p>
-    <button type="submit">Применить подпись к отмеченным</button>
-  </form>
-</div>
+  function sync() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    if (label) label.textContent = n ? 'отмечено: ' + n : 'ничего не отмечено';
+    if (master) {
+      master.checked = n === boxes.length;
+      master.indeterminate = n > 0 && n < boxes.length;
+    }
+  }
+
+  if (master) {
+    master.addEventListener('change', function () {
+      boxes.forEach(function (b) { b.checked = master.checked; });
+      sync();
+    });
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', sync); });
+  sync();
+})();
+</script>
+
 {% endblock %}

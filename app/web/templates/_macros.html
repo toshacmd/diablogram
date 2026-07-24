@@ -1,0 +1,39 @@
+{# Переиспользуемые кусочки разметки. Импорт: {% from "_macros.html" import ... %} #}
+
+{% set ACCOUNT_STATUS_LABELS = {
+  'active':   'активен',
+  'limited':  'ограничен',
+  'banned':   'забанен',
+  'disabled': 'выключен',
+} %}
+
+{% set COMMENT_STATUS_LABELS = {
+  'posted':         'опубликован',
+  'scheduled':      'в очереди',
+  'failed':         'ошибка',
+  'skipped_filter': 'отфильтрован',
+} %}
+
+
+{# Бейдж статуса аккаунта: active / limited / banned / disabled #}
+{% macro account_status(value) -%}
+<span class="badge {{ value }}">{{ ACCOUNT_STATUS_LABELS.get(value, value) }}</span>
+{%- endmacro %}
+
+
+{# Бейдж статуса комментария: posted / scheduled / failed / skipped_filter #}
+{% macro comment_status(value) -%}
+<span class="badge {{ value }}">{{ COMMENT_STATUS_LABELS.get(value, value) }}</span>
+{%- endmacro %}
+
+
+{# Пустая строка таблицы #}
+{% macro empty_row(cols, text) -%}
+<tr class="row-empty"><td colspan="{{ cols }}">{{ text }}</td></tr>
+{%- endmacro %}
+
+
+{# Технический чип или прочерк, если значения нет #}
+{% macro chip(value, empty='—') -%}
+{% if value %}<span class="chip">{{ value }}</span>{% else %}<span class="dim">{{ empty }}</span>{% endif %}
+{%- endmacro %}

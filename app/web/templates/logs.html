@@ -1,29 +1,105 @@
 {% extends "base.html" %}
+{% from "_macros.html" import comment_status, empty_row, COMMENT_STATUS_LABELS %}
+
 {% block title %}Журнал — Diablogram AI{% endblock %}
+{% block page_title %}Журнал комментариев{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">
+    {% if has_filters %}Найдено {{ total }} — по выбранному фильтру{% else %}Всего записей: {{ total }}{% endif %}
+  </div>
+{% endblock %}
+
 {% block content %}
-<h1>Журнал комментариев</h1>
 
-<table>
-  <tr><th>Когда</th><th>Канал</th><th>Аккаунт</th><th>Персона</th><th>Статус</th><th>Текст</th></tr>
-  {% for log in logs %}
-  <tr>
-    <td class="muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-    <td>{{ log.channel.title if log.channel else log.channel_id }}</td>
-    <td>{{ log.account.label if log.account else log.account_id }}</td>
-    <td class="muted">{{ log.persona_name or '—' }}</td>
-    <td>
-      <span class="badge {{ log.status.value }}">{{ log.status.value }}</span>
-      {% if log.error %}<div class="muted">{{ log.error }}</div>{% endif %}
-    </td>
-    <td>{{ log.full_text or log.generated_text }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="muted">Записей пока нет</td></tr>
-  {% endfor %}
-</table>
+{# Ссылка постраничной навигации с сохранением фильтров #}
+{% macro pager_url(p) -%}
+/logs?page={{ p }}{% if f_status %}&status={{ f_status }}{% endif %}{% if f_channel_id %}&channel_id={{ f_channel_id }}{% endif %}
+{%- endmacro %}
 
-<div class="row">
-  {% if page > 1 %}<a href="/logs?page={{ page - 1 }}">← Назад</a>{% endif %}
-  <a href="/logs?page={{ page + 1 }}">Вперёд →</a>
+<form method="get" action="/logs" class="toolbar">
+  <div class="filter">
+    <label for="f-status">Статус</label>
+    <select id="f-status" name="status" class="input-sm">
+      <option value="">все</option>
+      {% for key, label in COMMENT_STATUS_LABELS.items() %}
+        <option value="{{ key }}" {{ 'selected' if f_status == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filter">
+    <label for="f-channel">Канал</label>
+    <select id="f-channel" name="channel_id" class="input-sm">
+      <option value="">все</option>
+      {% for c in channels %}
+        <option value="{{ c.id }}" {{ 'selected' if f_channel_id == c.id }}>{{ c.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <button type="submit" class="btn btn-sm btn-primary">Показать</button>
+  {% if has_filters %}<a href="/logs" class="btn btn-sm btn-ghost">Сбросить</a>{% endif %}
+</form>
+
+<div class="card">
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th class="col-tight">Когда</th>
+            <th>Канал</th>
+            <th>Аккаунт</th>
+            <th>Персона</th>
+            <th class="col-tight">Статус</th>
+            <th>Текст комментария</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="col-tight"><span class="mono dim">{{ log.created_at.strftime('%d.%m %H:%M') }}</span></td>
+            <td class="truncate" style="max-width:200px">
+              {% if log.channel %}
+                <a class="cell-link" href="/logs?channel_id={{ log.channel_id }}">{{ log.channel.title }}</a>
+              {% else %}
+                <span class="dim">#{{ log.channel_id }}</span>
+              {% endif %}
+            </td>
+            <td class="truncate" style="max-width:170px">
+              {% if log.account %}
+                <a class="cell-link" href="/accounts/{{ log.account_id }}">{{ log.account.label }}</a>
+              {% else %}
+                <span class="dim">#{{ log.account_id }}</span>
+              {% endif %}
+            </td>
+            <td class="muted">{{ log.persona_name or '—' }}</td>
+            <td class="col-tight">
+              {{ comment_status(log.status.value) }}
+              {% if log.error %}<div class="cell-sub mono truncate" style="max-width:200px" title="{{ log.error }}">{{ log.error }}</div>{% endif %}
+            </td>
+            <td class="col-text"><div class="clamp-2">{{ log.full_text or log.generated_text or '—' }}</div></td>
+          </tr>
+          {% else %}
+          {{ empty_row(6, 'Записей нет' if not has_filters else 'По этому фильтру ничего не нашлось') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if total %}
+  <div class="pager">
+    <span>
+      Страница <span class="num">{{ page }}</span> из <span class="num">{{ total_pages }}</span>
+      · показано {{ logs | length }} из {{ total }}
+    </span>
+    <div class="pager__nav">
+      <a class="btn btn-sm {{ 'is-off' if page <= 1 }}" href="{{ pager_url(page - 1) if page > 1 else 'javascript:void 0' }}">← Назад</a>
+      <a class="btn btn-sm {{ 'is-off' if page >= total_pages }}" href="{{ pager_url(page + 1) if page < total_pages else 'javascript:void 0' }}">Вперёд →</a>
+    </div>
+  </div>
+  {% endif %}
 </div>
+
 {% endblock %}

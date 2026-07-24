@@ -3,24 +3,98 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}Diablogram AI{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%236c7cff'/%3E%3Cpath d='M18.5 11.2a6.6 6.6 0 0 1-9.9 5.7L5 18l1.1-3.6a6.6 6.6 0 1 1 12.4-3.2z' fill='%23fff'/%3E%3C/svg%3E">
 </head>
 <body>
-  <nav>
-    <span class="brand">Diablogram AI</span>
-    <a href="/" class="{{ 'active' if active == 'dashboard' else '' }}">Обзор</a>
-    <a href="/channels" class="{{ 'active' if active == 'channels' else '' }}">Каналы</a>
-    <a href="/accounts" class="{{ 'active' if active == 'accounts' else '' }}">Аккаунты</a>
-    <a href="/personas" class="{{ 'active' if active == 'personas' else '' }}">Персоны</a>
-    <a href="/settings" class="{{ 'active' if active == 'settings' else '' }}">Настройки</a>
-    <a href="/logs" class="{{ 'active' if active == 'logs' else '' }}">Журнал</a>
-  </nav>
-  <main>
-    {% if request.query_params.get('flash') %}
-      <div class="flash">{{ request.query_params.get('flash') }}</div>
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
+{# ---- переиспользуемые иконки навигации ---------------------------------- #}
+{% macro icon(name) -%}
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == 'dashboard' -%}
+    <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>
+  {%- elif name == 'logs' -%}
+    <path d="M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>
+  {%- elif name == 'channels' -%}
+    <path d="m3 11 18-5.5v13L3 13z"/><path d="M11.5 16.6a3 3 0 0 1-5.7-1.4"/>
+  {%- elif name == 'accounts' -%}
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+  {%- elif name == 'personas' -%}
+    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>
+  {%- elif name == 'settings' -%}
+    <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+
+<div class="app">
+  <aside class="sidebar">
+    <a class="sidebar__brand" href="/">
+      <span class="brand-mark">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 11.5a8.5 8.5 0 0 1-11.9 7.8L3 21l1.7-5.1A8.5 8.5 0 1 1 21 11.5z"/>
+        </svg>
+      </span>
+      <span class="brand-name">Diablogram<b> AI</b></span>
+    </a>
+
+    <nav class="sidebar__nav">
+      <div class="nav-group">
+        <div class="nav-group__label">Мониторинг</div>
+        <a href="/" class="nav-item {{ 'is-active' if active == 'dashboard' }}">{{ icon('dashboard') }} Обзор</a>
+        <a href="/logs" class="nav-item {{ 'is-active' if active == 'logs' }}">{{ icon('logs') }} Журнал</a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__label">Управление</div>
+        <a href="/channels" class="nav-item {{ 'is-active' if active == 'channels' }}">{{ icon('channels') }} Каналы</a>
+        <a href="/accounts" class="nav-item {{ 'is-active' if active == 'accounts' }}">{{ icon('accounts') }} Аккаунты</a>
+        <a href="/personas" class="nav-item {{ 'is-active' if active == 'personas' }}">{{ icon('personas') }} Персоны</a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__label">Система</div>
+        <a href="/settings" class="nav-item {{ 'is-active' if active == 'settings' }}">{{ icon('settings') }} Настройки</a>
+      </div>
+    </nav>
+
+    <div class="sidebar__foot">
+      Панель нейрокомментинга<br>
+      <span class="dim">локальный доступ</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div class="topbar__title">
+        <h1>{% block page_title %}{% endblock %}</h1>
+        {% block page_sub %}{% endblock %}
+      </div>
+      <div class="topbar__actions">{% block page_actions %}{% endblock %}</div>
+    </header>
+
+    <main class="page">
+      {% set flash = request.query_params.get('flash') %}
+      {% if flash %}
+        {% set is_bad = ('не удалось' in flash|lower) or ('не найден' in flash|lower) or ('ошибк' in flash|lower) %}
+        <div class="alert {{ 'is-warn' if is_bad else 'is-ok' }}">
+          <span class="alert__icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              {% if is_bad %}
+                <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>
+              {% else %}
+                <path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/>
+              {% endif %}
+            </svg>
+          </span>
+          <span>{{ flash }}</span>
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
 </body>
 </html>

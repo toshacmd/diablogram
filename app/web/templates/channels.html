@@ -1,49 +1,140 @@
 {% extends "base.html" %}
-{% block title %}Каналы — Diablogram AI{% endblock %}
-{% block content %}
-<h1>Каналы</h1>
+{% from "_macros.html" import empty_row %}
 
+{% block title %}Каналы — Diablogram AI{% endblock %}
+{% block page_title %}Каналы{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">Telegram-каналы, посты которых мониторятся и комментируются</div>
+{% endblock %}
+{% block page_actions %}
+  <a href="/accounts" class="btn btn-sm">Аккаунты</a>
+{% endblock %}
+
+{% block content %}
+
+{# ---------- Добавление канала ---------- #}
+<details class="card" {{ 'open' if not channels }}>
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить канал</span>
+      <span class="summary__desc">По @username или ссылке-приглашению</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    {% if not accounts %}
+      <div class="alert is-warn" style="margin:0">
+        <span class="alert__icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>
+          </svg>
+        </span>
+        <span>
+          Сначала добавьте хотя бы один аккаунт — через него панель запрашивает данные канала из Telegram.
+          <a href="/accounts">Перейти к аккаунтам →</a>
+        </span>
+      </div>
+    {% else %}
+      <form method="post" action="/channels/add">
+        <div class="field-grid cols-2">
+          <div class="field">
+            <label for="ch-link">Username или ссылка на канал</label>
+            <input id="ch-link" type="text" name="username_or_link" required placeholder="@mychannel" autocomplete="off">
+            <div class="field__hint">Для приватного канала — ссылка вида <span class="mono">t.me/+AbCdEf</span>.</div>
+          </div>
+          <div class="field">
+            <label for="ch-account">Через какой аккаунт получить данные</label>
+            <select id="ch-account" name="account_id">
+              {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}</option>{% endfor %}
+            </select>
+            <div class="field__hint">Аккаунт должен видеть канал — иначе Telegram не отдаст данные.</div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:18px">
+          <button type="submit" class="btn btn-primary">Добавить канал</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</details>
+
+{# ---------- Список каналов ---------- #}
 <div class="card">
-  <h2 style="margin-top:0">Добавить канал</h2>
-  {% if not accounts %}
-    <p class="muted">Сначала добавьте хотя бы один аккаунт — он нужен, чтобы получить данные канала из Telegram.</p>
-  {% else %}
-  <form method="post" action="/channels/add">
-    <div class="row">
-      <div>
-        <label>Через какой аккаунт получить данные канала</label>
-        <select name="account_id">
-          {% for a in accounts %}
-            <option value="{{ a.id }}">{{ a.label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label>Username или ссылка на канал (например @mychannel)</label>
-        <input type="text" name="username_or_link" required placeholder="@mychannel">
-      </div>
+  <div class="card__head">
+    <div>
+      <h2>Подключённые каналы</h2>
+      <div class="card__desc">Выключенный канал не мониторится, закрепления аккаунтов сохраняются</div>
     </div>
-    <button type="submit">Добавить</button>
-  </form>
-  {% endif %}
+    <div class="card__actions"><span class="count-pill">{{ channels | length }}</span></div>
+  </div>
+
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Канал</th>
+            <th>Username</th>
+            <th>Доступ</th>
+            <th class="col-tight">Аккаунтов</th>
+            <th class="col-tight">Статус</th>
+            <th class="col-tight"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in channels %}
+          <tr>
+            <td>
+              <div class="cell-title">{{ c.title }}</div>
+              <div class="cell-sub mono">id {{ c.tg_channel_id }}</div>
+            </td>
+            <td>
+              {% if c.username %}
+                <span class="chip">{{ c.username }}</span>
+              {% else %}
+                <span class="chip is-empty">нет</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.username %}
+                <span class="small muted">публичный</span>
+              {% elif c.invite_link %}
+                <span class="small muted">по инвайту</span>
+              {% else %}
+                <span class="small" style="color:var(--c-warn)">без ссылки</span>
+              {% endif %}
+            </td>
+            <td class="col-num">
+              <a href="/accounts?channel_id={{ c.id }}" class="cell-link">{{ assignment_counts.get(c.id, 0) }}</a>
+            </td>
+            <td class="col-tight">
+              <span class="badge {{ 'active' if c.is_active else 'disabled' }}">{{ 'активен' if c.is_active else 'выключен' }}</span>
+            </td>
+            <td class="col-actions">
+              <form class="inline" method="post" action="/channels/{{ c.id }}/toggle">
+                <button type="submit" class="btn btn-sm {{ 'btn-ghost' if c.is_active else '' }}">
+                  {{ 'Выключить' if c.is_active else 'Включить' }}
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          {{ empty_row(6, 'Каналов пока нет — добавьте первый через форму выше') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
-<table>
-  <tr><th>Канал</th><th>Username</th><th>Закреплено аккаунтов</th><th>Статус</th><th></th></tr>
-  {% for c in channels %}
-  <tr>
-    <td>{{ c.title }}</td>
-    <td class="muted">{{ c.username or '—' }}</td>
-    <td><a href="/accounts?channel_id={{ c.id }}">{{ assignment_counts.get(c.id, 0) }}</a></td>
-    <td><span class="badge {{ 'active' if c.is_active else 'disabled' }}">{{ 'активен' if c.is_active else 'выключен' }}</span></td>
-    <td>
-      <form class="inline" method="post" action="/channels/{{ c.id }}/toggle">
-        <button type="submit" class="secondary">{{ 'Выключить' if c.is_active else 'Включить' }}</button>
-      </form>
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="5" class="muted">Каналов пока нет</td></tr>
-  {% endfor %}
-</table>
 {% endblock %}

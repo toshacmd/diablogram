@@ -1,34 +1,110 @@
 {% extends "base.html" %}
+
 {% block title %}Настройки — Diablogram AI{% endblock %}
+{% block page_title %}Глобальные настройки{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">Действуют на все каналы и аккаунты сразу</div>
+{% endblock %}
+
 {% block content %}
-<h1>Глобальные настройки</h1>
 
 <form method="post" action="/settings">
+
+  {# ---------- Комментаторы ---------- #}
   <div class="card">
-    <h2 style="margin-top:0">Количество комментаторов на пост</h2>
-    <p class="muted">Минимум гарантирован всегда (хотя бы 1 комментарий на пост).</p>
-    <div class="row">
-      <div><label>Минимум</label><input type="number" name="commenters_min" value="{{ s.commenters_min }}" min="1"></div>
-      <div><label>Максимум</label><input type="number" name="commenters_max" value="{{ s.commenters_max }}" min="1"></div>
+    <div class="card__head">
+      <div>
+        <h2>Комментаторов на пост</h2>
+        <div class="card__desc">Сколько разных аккаунтов ответят под одним постом</div>
+      </div>
+      <div class="card__actions">
+        <span class="count-pill">{{ s.commenters_min }}–{{ s.commenters_max }}</span>
+      </div>
+    </div>
+    <div class="card__body">
+      <div class="field-grid cols-2">
+        <div class="field">
+          <label for="cmin">Минимум</label>
+          <input id="cmin" type="number" name="commenters_min" value="{{ s.commenters_min }}" min="1">
+          <div class="field__hint">Гарантируется всегда — хотя бы один комментарий на пост.</div>
+        </div>
+        <div class="field">
+          <label for="cmax">Максимум</label>
+          <input id="cmax" type="number" name="commenters_max" value="{{ s.commenters_max }}" min="1">
+          <div class="field__hint">Точное число выбирается случайно из диапазона.</div>
+        </div>
+      </div>
     </div>
   </div>
 
+  {# ---------- Задержка ---------- #}
   <div class="card">
-    <h2 style="margin-top:0">Задержка перед публикацией комментария</h2>
-    <p class="muted">У каждого выбранного аккаунта — своя случайная задержка из этого диапазона.</p>
-    <div class="row">
-      <div><label>Минимум, сек</label><input type="number" name="delay_min_seconds" value="{{ s.delay_min_seconds }}" min="0"></div>
-      <div><label>Максимум, сек</label><input type="number" name="delay_max_seconds" value="{{ s.delay_max_seconds }}" min="0"></div>
+    <div class="card__head">
+      <div>
+        <h2>Задержка перед публикацией</h2>
+        <div class="card__desc">Разброс, чтобы комментарии не выглядели ботоподобной пачкой</div>
+      </div>
+      <div class="card__actions">
+        <span class="count-pill">{{ s.delay_min_seconds // 60 }}–{{ s.delay_max_seconds // 60 }} мин</span>
+      </div>
+    </div>
+    <div class="card__body">
+      <div class="field-grid cols-2">
+        <div class="field">
+          <label for="dmin">Минимум, секунд</label>
+          <input id="dmin" type="number" name="delay_min_seconds" value="{{ s.delay_min_seconds }}" min="0">
+          <div class="field__hint">Сейчас ≈ {{ s.delay_min_seconds // 60 }} мин {{ s.delay_min_seconds % 60 }} сек.</div>
+        </div>
+        <div class="field">
+          <label for="dmax">Максимум, секунд</label>
+          <input id="dmax" type="number" name="delay_max_seconds" value="{{ s.delay_max_seconds }}" min="0">
+          <div class="field__hint">Сейчас ≈ {{ s.delay_max_seconds // 60 }} мин {{ s.delay_max_seconds % 60 }} сек.</div>
+        </div>
+      </div>
+      <p class="fieldset__note" style="margin:14px 0 0">
+        У каждого выбранного аккаунта своя случайная задержка из этого диапазона — они не публикуются одновременно.
+      </p>
     </div>
   </div>
 
+  {# ---------- Контент-фильтр ---------- #}
   <div class="card">
-    <h2 style="margin-top:0">Контент-фильтр</h2>
-    <label><input type="checkbox" name="content_filter_enabled" style="width:auto" {{ 'checked' if s.content_filter_enabled else '' }}> Включён</label>
-    <label>Стоп-слова/темы (по одному на строку)</label>
-    <textarea name="stop_terms" rows="6">{{ s.stop_terms | join('\n') }}</textarea>
+    <div class="card__head">
+      <div>
+        <h2>Контент-фильтр</h2>
+        <div class="card__desc">Посты со стоп-словами пропускаются без комментария</div>
+      </div>
+      <div class="card__actions">
+        <span class="badge {{ 'active' if s.content_filter_enabled else 'disabled' }}">
+          {{ 'включён' if s.content_filter_enabled else 'выключен' }}
+        </span>
+      </div>
+    </div>
+    <div class="card__body">
+      <label class="check-card" style="margin-bottom:16px">
+        <input type="checkbox" name="content_filter_enabled" {{ 'checked' if s.content_filter_enabled }}>
+        <span class="check__text">
+          Включить фильтр
+          <span class="check__hint">Выключенный фильтр игнорирует список ниже, но не стирает его</span>
+        </span>
+      </label>
+
+      <div class="field">
+        <label for="stop-terms">
+          Стоп-слова и темы
+          <span class="dim" style="font-weight:400">· по одному на строку · сейчас {{ s.stop_terms | length }}</span>
+        </label>
+        <textarea id="stop-terms" name="stop_terms" rows="8" class="is-mono" spellcheck="false"
+                  placeholder="политика&#10;трагедия&#10;розыгрыш">{{ s.stop_terms | join('\n') }}</textarea>
+        <div class="field__hint">Сравнение без учёта регистра, по вхождению в текст поста.</div>
+      </div>
+    </div>
   </div>
 
-  <button type="submit">Сохранить</button>
+  <div class="form-actions">
+    <span class="small dim">Изменения применяются к следующим постам — уже запланированные комментарии не пересчитываются.</span>
+    <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+  </div>
 </form>
+
 {% endblock %}
