@@ -5,6 +5,8 @@ from app.models.persona import Persona
 from app.models.comment_log import CommentLog, CommentStatus
 from app.models.channel_ban import ChannelBan
 from app.models.settings import GlobalSettings
+from app.models.scrape_account import ScrapeAccount
+from app.models.parse_run import ParseRun, ParseRunStatus, ParsedChannel
 
 __all__ = [
     "Account",
@@ -16,4 +18,8 @@ __all__ = [
     "CommentStatus",
     "ChannelBan",
     "GlobalSettings",
+    "ScrapeAccount",
+    "ParseRun",
+    "ParseRunStatus",
+    "ParsedChannel",
 ]

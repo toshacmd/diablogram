@@ -24,6 +24,8 @@
     <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>
   {%- elif name == 'settings' -%}
     <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5"/>
+  {%- elif name == 'parsing' -%}
+    <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
   {%- endif -%}
 </svg>
 {%- endmacro %}
@@ -51,6 +53,7 @@
         <a href="/channels" class="nav-item {{ 'is-active' if active == 'channels' }}">{{ icon('channels') }} Каналы</a>
         <a href="/accounts" class="nav-item {{ 'is-active' if active == 'accounts' }}">{{ icon('accounts') }} Аккаунты</a>
         <a href="/personas" class="nav-item {{ 'is-active' if active == 'personas' }}">{{ icon('personas') }} Персоны</a>
+        <a href="/parsing" class="nav-item {{ 'is-active' if active == 'parsing' }}">{{ icon('parsing') }} Парсинг</a>
       </div>
 
       <div class="nav-group">

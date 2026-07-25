@@ -14,6 +14,13 @@
   'skipped_filter': 'отфильтрован',
 } %}
 
+{% set PARSE_RUN_STATUS_LABELS = {
+  'queued':    'в очереди',
+  'running':   'выполняется',
+  'completed': 'готово',
+  'failed':    'ошибка',
+} %}
+
 
 {# Бейдж статуса аккаунта: active / limited / banned / disabled #}
 {% macro account_status(value) -%}
@@ -24,6 +31,12 @@
 {# Бейдж статуса комментария: posted / scheduled / failed / skipped_filter #}
 {% macro comment_status(value) -%}
 <span class="badge {{ value }}">{{ COMMENT_STATUS_LABELS.get(value, value) }}</span>
+{%- endmacro %}
+
+
+{# Бейдж статуса прогона парсинга: queued / running / completed / failed #}
+{% macro parse_run_status(value) -%}
+<span class="badge {{ 'active' if value == 'completed' else 'limited' if value == 'running' else 'banned' if value == 'failed' else 'scheduled' }}">{{ PARSE_RUN_STATUS_LABELS.get(value, value) }}</span>
 {%- endmacro %}
 
 

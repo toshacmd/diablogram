@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% from "_macros.html" import account_status, parse_run_status, empty_row, chip %}
+
+{% block title %}Парсинг — Diablogram AI{% endblock %}
+{% block page_title %}Парсинг{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">
+    Поиск русскоязычных каналов с открытыми комментариями — для ручного обхода и поиска контактов админов
+  </div>
+{% endblock %}
+
+{% block content %}
+
+{# ---------- Scrape-аккаунты ---------- #}
+<details class="card" {{ 'open' if not scrape_accounts }}>
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить scrape-аккаунт</span>
+      <span class="summary__desc">Отдельный пул только под парсинг — никогда не комментирует, не пересекается с боевыми аккаунтами</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    <form method="post" action="/parsing/scrape-accounts/add">
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="sa-label">Метка (опционально)</label>
+          <input id="sa-label" type="text" name="label" placeholder="Scrape 1" autocomplete="off">
+        </div>
+        <div class="field span-2">
+          <label for="sa-session">Session-строка (Telethon StringSession)</label>
+          <textarea id="sa-session" name="session_string" class="is-mono" required
+                    placeholder="1BQANOTEuMTA4LjU2LjE..." spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <fieldset class="fieldset">
+        <div class="fieldset__legend">Прокси</div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="sa-ptype">Тип</label>
+            <select id="sa-ptype" name="proxy_type">
+              <option value="">— без прокси —</option>
+              <option value="socks5">SOCKS5</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+          <div class="field span-2">
+            <label for="sa-phost">Хост</label>
+            <input id="sa-phost" type="text" name="proxy_host" placeholder="127.0.0.1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="sa-pport">Порт</label>
+            <input id="sa-pport" type="number" name="proxy_port" placeholder="1080">
+          </div>
+          <div class="field">
+            <label for="sa-puser">Логин</label>
+            <input id="sa-puser" type="text" name="proxy_username" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="sa-ppass">Пароль</label>
+            <input id="sa-ppass" type="password" name="proxy_password" autocomplete="new-password">
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="btn-row" style="margin-top:20px">
+        <button type="submit" class="btn btn-primary">Добавить</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Scrape-аккаунты</h2>
+      <div class="card__desc">Premium-аккаунты отдают до 100 похожих каналов за шаг вместо ~10</div>
+    </div>
+    <div class="card__actions"><span class="count-pill">{{ scrape_accounts | length }}</span></div>
+  </div>
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Аккаунт</th>
+            <th class="col-tight">Статус</th>
+            <th>Прокси</th>
+            <th class="col-tight">Premium</th>
+            <th class="col-tight"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in scrape_accounts %}
+          <tr>
+            <td>{{ a.label or ('Аккаунт #' ~ a.id) }}
+              {% if a.status_note %}<div class="cell-sub truncate" style="max-width:220px">{{ a.status_note }}</div>{% endif %}
+            </td>
+            <td class="col-tight">{{ account_status(a.status.value) }}</td>
+            <td>
+              {% if a.proxy_host %}
+                <span class="chip">{{ a.proxy_type or '?' }} · {{ a.proxy_host }}:{{ a.proxy_port or '—' }}</span>
+              {% else %}
+                <span class="chip is-empty">без прокси</span>
+              {% endif %}
+            </td>
+            <td class="col-tight">{{ 'да' if a.is_premium else '—' }}</td>
+            <td class="col-actions">
+              <form method="post" action="/parsing/scrape-accounts/{{ a.id }}/delete"
+                    onsubmit="return confirm('Удалить scrape-аккаунт «{{ a.label or ('#' ~ a.id) }}»?')">
+                <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          {{ empty_row(5, 'Пока нет ни одного scrape-аккаунта — добавьте через форму выше') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ---------- Запуск парсинга ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Запустить парсинг</h2>
+      <div class="card__desc">Поиск по ключевым словам + расширение через похожие каналы</div>
+    </div>
+  </div>
+  <div class="card__body">
+    <form method="post" action="/parsing/runs/start">
+      <div class="field">
+        <label for="pr-keywords">Ключевые слова</label>
+        <textarea id="pr-keywords" name="keywords" required placeholder="крипта, трейдинг, инвестиции" style="min-height:72px"></textarea>
+        <div class="field__hint">Через запятую или с новой строки — стартовая точка для поиска Telegram, дальше база расширяется через похожие каналы.</div>
+      </div>
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="pr-min-subs">Минимум подписчиков</label>
+          <input id="pr-min-subs" type="number" name="min_subscribers" value="1000" min="0">
+        </div>
+        <div class="field">
+          <label for="pr-days">Активность, дней</label>
+          <input id="pr-days" type="number" name="max_inactive_days" value="14" min="1">
+          <div class="field__hint">Был пост не позже этого срока.</div>
+        </div>
+        <div class="field">
+          <label for="pr-depth">Глубина расширения</label>
+          <input id="pr-depth" type="number" name="depth" value="1" min="0" max="2">
+          <div class="field__hint">Больше 1-2 — тема начинает расползаться.</div>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:16px">
+        <button type="submit" class="btn btn-primary">Запустить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ---------- История прогонов ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>История прогонов</h2>
+      <div class="card__desc">Каждый прогон хранится отдельно, без пересечений между собой</div>
+    </div>
+    <div class="card__actions"><span class="count-pill">{{ runs | length }}</span></div>
+  </div>
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th class="col-tight">#</th>
+            <th>Ключевые слова</th>
+            <th class="col-tight">Статус</th>
+            <th class="col-num">Найдено</th>
+            <th>Запущен</th>
+            <th class="col-tight"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+          <tr>
+            <td class="col-tight mono dim">#{{ run.id }}</td>
+            <td class="col-text truncate" style="max-width:320px">{{ run.keywords }}</td>
+            <td class="col-tight">{{ parse_run_status(run.status.value) }}</td>
+            <td class="col-num">{{ run.channels_found }}</td>
+            <td class="mono dim">{{ run.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+            <td class="col-actions">
+              <a href="/parsing/runs/{{ run.id }}" class="btn btn-sm btn-ghost">Открыть</a>
+            </td>
+          </tr>
+          {% else %}
+          {{ empty_row(6, 'Прогонов пока не было') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

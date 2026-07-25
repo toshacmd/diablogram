@@ -274,6 +274,57 @@ class TelegramManager:
             raise AccountBannedError(str(e)) from e
 
     # ------------------------------------------------------------------ #
+    # Lead-gen discovery (channel search, similar channels)
+    # ------------------------------------------------------------------ #
+
+    async def search_channels(self, account_id: int, query: str, limit: int = 50) -> list[types.Channel]:
+        """Global Telegram search for `query`, filtered down to broadcast
+        channels (drops users, groups, bots that also match the query)."""
+        client = self.get_client(account_id)
+        try:
+            result = await client(functions.contacts.SearchRequest(q=query, limit=limit))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+        return [c for c in result.chats if isinstance(c, types.Channel) and c.broadcast]
+
+    async def get_similar_channels(self, account_id: int, channel) -> list[types.Channel]:
+        """Telegram's own "similar channels" recommendations for `channel` —
+        up to ~10 on a non-Premium account, up to ~100 with Premium."""
+        client = self.get_client(account_id)
+        try:
+            result = await client(functions.channels.GetChannelRecommendationsRequest(channel=channel))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+        return [c for c in result.chats if isinstance(c, types.Channel) and c.broadcast]
+
+    async def get_channel_full_info(self, account_id: int, channel):
+        """Returns ChannelFull — has `.about`, `.linked_chat_id` (open
+        comments iff truthy), `.participants_count`."""
+        client = self.get_client(account_id)
+        try:
+            result = await client(functions.channels.GetFullChannelRequest(channel))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+        return result.full_chat
+
+    async def get_last_post_date(self, account_id: int, channel):
+        """Date of the channel's most recent message, or None if it has none."""
+        client = self.get_client(account_id)
+        try:
+            messages = await client.get_messages(channel, limit=1)
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+        return messages[0].date if messages else None
+
+    # ------------------------------------------------------------------ #
     # Telegram profile (nickname, name, bio, avatar, stories)
     # ------------------------------------------------------------------ #
 

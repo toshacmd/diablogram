@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.services.seed import seed_builtin_personas
-from app.web.routes import accounts, channels, dashboard, logs, personas, settings
+from app.web.routes import accounts, channels, dashboard, logs, parsing, personas, settings
 
 app = FastAPI(title="Diablogram AI — нейрокомментинг")
 
@@ -14,6 +14,7 @@ app.include_router(accounts.router)
 app.include_router(personas.router)
 app.include_router(settings.router)
 app.include_router(logs.router)
+app.include_router(parsing.router)
 
 
 @app.on_event("startup")
