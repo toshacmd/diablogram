@@ -141,7 +141,10 @@ async def export_parse_run_csv(run_id: int):
         )
 
     buf = io.StringIO()
-    writer = csv.writer(buf)
+    # Excel on ru-RU Windows uses ';' as its default list separator (comma is
+    # the decimal separator there) — a comma-delimited file opened by double
+    # click gets dumped into a single column instead of split across cells.
+    writer = csv.writer(buf, delimiter=";")
     writer.writerow(["tg_channel_id", "title", "username", "subscribers", "link"])
     for c in channels:
         writer.writerow([c.tg_channel_id, c.title, c.username, c.subscriber_count, f"https://t.me/{c.username}"])
