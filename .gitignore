@@ -10,5 +10,6 @@ venv/
 sessions/
 *.session
 *.session-journal
+data/
 node_modules/
 .DS_Store

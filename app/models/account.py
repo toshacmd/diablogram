@@ -1,7 +1,7 @@
 import datetime as dt
 import enum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -31,6 +31,16 @@ class Account(Base):
     proxy_password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     signature: Mapped[str] = mapped_column(Text, default="")
+
+    # Cached Telegram profile — refreshed via sync-profile / after edits, not
+    # read live on every page load (50+ accounts would mean a Telegram round
+    # trip per page view).
+    tg_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tg_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tg_first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tg_last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tg_bio: Mapped[str | None] = mapped_column(String(70), nullable=True)
+    tg_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     persona_id: Mapped[int | None] = mapped_column(ForeignKey("personas.id", ondelete="SET NULL"), nullable=True)
     persona: Mapped["Persona"] = relationship(back_populates="accounts")

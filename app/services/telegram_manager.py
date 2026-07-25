@@ -7,11 +7,12 @@ talks to Telegram.
 """
 from __future__ import annotations
 
+import io
 import logging
 import re
 from collections.abc import Awaitable, Callable
 
-from telethon import TelegramClient, events, functions
+from telethon import TelegramClient, events, functions, types
 from telethon.errors import (
     AuthKeyUnregisteredError,
     ChatWriteForbiddenError,
@@ -25,6 +26,7 @@ from telethon.errors import (
 )
 from telethon.sessions import StringSession
 from telethon.tl.custom.message import Message
+from telethon.tl.types import User
 from telethon.utils import get_peer_id
 
 from app.config import get_settings
@@ -271,6 +273,84 @@ class TelegramManager:
             # The account itself is dead — banned/deactivated by Telegram globally.
             raise AccountBannedError(str(e)) from e
 
+    # ------------------------------------------------------------------ #
+    # Telegram profile (nickname, name, bio, avatar, stories)
+    # ------------------------------------------------------------------ #
+
+    async def get_me(self, account_id: int) -> User:
+        client = self.get_client(account_id)
+        return await client.get_me()
+
+    async def download_avatar(self, account_id: int) -> bytes | None:
+        """Returns the account's current profile photo as JPEG bytes, or
+        None if it has no avatar set."""
+        client = self.get_client(account_id)
+        me = await client.get_me()
+        if me.photo is None:
+            return None
+        buf = io.BytesIO()
+        result = await client.download_profile_photo(me, file=buf)
+        return buf.getvalue() if result else None
+
+    async def update_profile(
+        self,
+        account_id: int,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        about: str | None = None,
+        username: str | None = None,
+    ) -> None:
+        """Updates name/bio and/or the @username. Any of these left as None
+        is left untouched. Username-specific errors (taken, invalid,
+        unchanged) are intentionally not caught here — they're a UI concern
+        for the caller to turn into a message, not an account-health signal."""
+        client = self.get_client(account_id)
+        try:
+            if first_name is not None or last_name is not None or about is not None:
+                await client(
+                    functions.account.UpdateProfileRequest(
+                        first_name=first_name, last_name=last_name, about=about
+                    )
+                )
+            if username is not None:
+                await client(functions.account.UpdateUsernameRequest(username))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+
+    async def update_avatar(self, account_id: int, photo_bytes: bytes) -> None:
+        client = self.get_client(account_id)
+        try:
+            uploaded = await client.upload_file(photo_bytes, file_name="avatar.jpg")
+            await client(functions.photos.UploadProfilePhotoRequest(file=uploaded))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+
+    async def post_story(
+        self, account_id: int, media_bytes: bytes, filename: str, caption: str | None = None
+    ) -> None:
+        client = self.get_client(account_id)
+        buf = io.BytesIO(media_bytes)
+        buf.name = filename  # _file_to_media reads this to tell photo from video
+        try:
+            _, media, _ = await client._file_to_media(buf, file_size=len(media_bytes))
+            await client(
+                functions.stories.SendStoryRequest(
+                    peer=types.InputPeerSelf(),
+                    media=media,
+                    privacy_rules=[types.InputPrivacyValueAllowAll()],
+                    caption=caption or None,
+                )
+            )
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+
 
 async def resolve_channel_standalone(account, username_or_link: str) -> tuple[int, str, str | None, str | None]:
     """One-off channel resolution using a throwaway connection — used by the
@@ -299,6 +379,58 @@ async def join_channel_standalone(account, username_or_id: str | int, invite_lin
     await temp.connect_account(account)
     try:
         await temp.join_channel(account.id, username_or_id, invite_link=invite_link)
+    finally:
+        await temp.disconnect_all()
+
+
+async def sync_profile_standalone(account) -> tuple[User, bytes | None]:
+    """One-off fetch of the account's live Telegram profile + avatar, mirroring
+    resolve_channel_standalone."""
+    temp = TelegramManager()
+    await temp.connect_account(account)
+    try:
+        me = await temp.get_me(account.id)
+        avatar = await temp.download_avatar(account.id)
+        return me, avatar
+    finally:
+        await temp.disconnect_all()
+
+
+async def update_profile_standalone(
+    account,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    about: str | None = None,
+    username: str | None = None,
+) -> User:
+    """One-off profile/username update, then re-fetches the resulting profile
+    so the caller can refresh its cache with what Telegram actually stored."""
+    temp = TelegramManager()
+    await temp.connect_account(account)
+    try:
+        await temp.update_profile(
+            account.id, first_name=first_name, last_name=last_name, about=about, username=username
+        )
+        return await temp.get_me(account.id)
+    finally:
+        await temp.disconnect_all()
+
+
+async def update_avatar_standalone(account, photo_bytes: bytes) -> None:
+    temp = TelegramManager()
+    await temp.connect_account(account)
+    try:
+        await temp.update_avatar(account.id, photo_bytes)
+    finally:
+        await temp.disconnect_all()
+
+
+async def post_story_standalone(account, media_bytes: bytes, filename: str, caption: str | None = None) -> None:
+    temp = TelegramManager()
+    await temp.connect_account(account)
+    try:
+        await temp.post_story(account.id, media_bytes, filename, caption)
     finally:
         await temp.disconnect_all()
 

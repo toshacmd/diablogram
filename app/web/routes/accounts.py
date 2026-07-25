@@ -1,17 +1,34 @@
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+import datetime as dt
+from pathlib import Path
+
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from telethon.errors import UsernameInvalidError, UsernameNotModifiedError, UsernameOccupiedError
 
 from app.crypto import encrypt
 from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, CommentLog, Persona
 from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
-from app.services.telegram_manager import join_channel_standalone
+from app.services.telegram_manager import (
+    join_channel_standalone,
+    post_story_standalone,
+    sync_profile_standalone,
+    update_avatar_standalone,
+    update_profile_standalone,
+)
 from app.web.templating import templates
 
 router = APIRouter()
+
+# Cached Telegram avatars — runtime data, not part of the repo (see .gitignore).
+AVATAR_DIR = Path("data/avatars")
+
+
+def _avatar_path(account_id: int) -> Path:
+    return AVATAR_DIR / f"{account_id}.jpg"
 
 
 @router.get("/accounts")
@@ -285,3 +302,165 @@ async def bulk_signature(request: Request):
         count = len(accounts)
 
     return RedirectResponse(f"/accounts?flash=Подпись обновлена у {count} аккаунтов", status_code=303)
+
+
+@router.get("/accounts/{account_id}/avatar")
+async def account_avatar(account_id: int):
+    path = _avatar_path(account_id)
+    if not path.is_file():
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@router.post("/accounts/{account_id}/sync-profile")
+async def sync_profile(account_id: int):
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+
+        try:
+            me, avatar_bytes = await sync_profile_standalone(account)
+        except AccountLimitedError as e:
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
+                status_code=303,
+            )
+        except AccountBannedError as e:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+
+        account.tg_user_id = me.id
+        account.tg_username = me.username
+        account.tg_first_name = me.first_name
+        account.tg_last_name = me.last_name
+        account.tg_synced_at = dt.datetime.utcnow()
+        if avatar_bytes:
+            AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+            _avatar_path(account_id).write_bytes(avatar_bytes)
+        await session.commit()
+
+    return RedirectResponse(f"/accounts/{account_id}?flash=Профиль обновлён из Telegram", status_code=303)
+
+
+@router.post("/accounts/{account_id}/update-profile")
+async def update_profile(
+    account_id: int,
+    tg_first_name: str = Form(""),
+    tg_last_name: str = Form(""),
+    tg_username: str = Form(""),
+    tg_bio: str = Form(""),
+):
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+
+        first_name = tg_first_name.strip()
+        last_name = tg_last_name.strip()
+        username = tg_username.strip().lstrip("@")
+        bio = tg_bio.strip()
+
+        kwargs: dict = {}
+        if first_name != (account.tg_first_name or ""):
+            kwargs["first_name"] = first_name
+        if last_name != (account.tg_last_name or ""):
+            kwargs["last_name"] = last_name
+        if bio != (account.tg_bio or ""):
+            kwargs["about"] = bio
+        if username != (account.tg_username or ""):
+            kwargs["username"] = username
+
+        if not kwargs:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Изменений нет", status_code=303)
+
+        try:
+            me = await update_profile_standalone(account, **kwargs)
+        except (UsernameOccupiedError, UsernameInvalidError, UsernameNotModifiedError) as e:
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Не удалось изменить юзернейм: {e}", status_code=303
+            )
+        except AccountLimitedError as e:
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
+                status_code=303,
+            )
+        except AccountBannedError as e:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+
+        account.tg_user_id = me.id
+        account.tg_username = me.username
+        account.tg_first_name = me.first_name
+        account.tg_last_name = me.last_name
+        account.tg_bio = bio
+        account.tg_synced_at = dt.datetime.utcnow()
+        await session.commit()
+
+    return RedirectResponse(f"/accounts/{account_id}?flash=Профиль в Telegram обновлён", status_code=303)
+
+
+@router.post("/accounts/{account_id}/update-avatar")
+async def update_avatar(account_id: int, avatar_file: UploadFile = File(...)):
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+
+        if not (avatar_file.content_type or "").startswith("image/"):
+            return RedirectResponse(f"/accounts/{account_id}?flash=Нужен файл изображения", status_code=303)
+        photo_bytes = await avatar_file.read()
+        if len(photo_bytes) > 10 * 1024 * 1024:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Файл слишком большой (макс. 10 МБ)", status_code=303)
+
+        try:
+            await update_avatar_standalone(account, photo_bytes)
+        except AccountLimitedError as e:
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
+                status_code=303,
+            )
+        except AccountBannedError as e:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+
+        AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+        _avatar_path(account_id).write_bytes(photo_bytes)
+        account.tg_synced_at = dt.datetime.utcnow()
+        await session.commit()
+
+    return RedirectResponse(f"/accounts/{account_id}?flash=Аватар обновлён", status_code=303)
+
+
+@router.post("/accounts/{account_id}/story")
+async def post_story(account_id: int, story_file: UploadFile = File(...), caption: str = Form("")):
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+
+        content_type = story_file.content_type or ""
+        if not (content_type.startswith("image/") or content_type.startswith("video/")):
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Нужен файл изображения или видео", status_code=303
+            )
+        media_bytes = await story_file.read()
+        if len(media_bytes) > 50 * 1024 * 1024:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Файл слишком большой (макс. 50 МБ)", status_code=303)
+
+        try:
+            await post_story_standalone(account, media_bytes, story_file.filename or "story.jpg", caption.strip() or None)
+        except AccountLimitedError as e:
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
+                status_code=303,
+            )
+        except AccountBannedError as e:
+            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось опубликовать сторис: {e}", status_code=303)
+
+    return RedirectResponse(f"/accounts/{account_id}?flash=Сторис опубликована", status_code=303)

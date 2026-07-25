@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import account_status %}
+{% from "_macros.html" import account_status, account_avatar %}
 
 {% block title %}{{ account.label }} — Diablogram AI{% endblock %}
 {% block page_title %}{{ account.label }}{% endblock %}
@@ -176,6 +176,106 @@
       </fieldset>
 
     </div>
+  </div>
+</div>
+
+{# ---------- Telegram-профиль ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Telegram-профиль</h2>
+      <div class="card__desc">Как аккаунт выглядит для других в Telegram — никнейм, имя, аватар</div>
+    </div>
+    <div class="card__actions">
+      <form method="post" action="/accounts/{{ account.id }}/sync-profile">
+        <button type="submit" class="btn btn-sm">Обновить из Telegram</button>
+      </form>
+    </div>
+  </div>
+  <div class="card__body">
+    <div style="display:grid; grid-template-columns:140px 1fr; gap:28px; align-items:start">
+
+      <div style="display:flex; flex-direction:column; align-items:center; gap:12px">
+        {{ account_avatar(account, 'lg') }}
+        <form method="post" action="/accounts/{{ account.id }}/update-avatar" enctype="multipart/form-data" style="width:100%">
+          <div class="field">
+            <input type="file" name="avatar_file" accept="image/*" required style="font-size:11.5px">
+          </div>
+          <div class="btn-row" style="margin-top:8px; justify-content:center">
+            <button type="submit" class="btn btn-sm btn-primary">Загрузить</button>
+          </div>
+        </form>
+      </div>
+
+      <div>
+        <div class="kv" style="margin-bottom:18px">
+          <div class="kv__row">
+            <span class="kv__key">Telegram ID</span>
+            <span class="kv__val mono">{{ account.tg_user_id or '—' }}</span>
+          </div>
+          <div class="kv__row">
+            <span class="kv__key">Синхронизировано</span>
+            <span class="kv__val mono dim">
+              {{ account.tg_synced_at.strftime('%d.%m.%Y %H:%M') if account.tg_synced_at else 'ещё не синхронизировано' }}
+            </span>
+          </div>
+        </div>
+
+        <form method="post" action="/accounts/{{ account.id }}/update-profile">
+          <div class="field-grid cols-2">
+            <div class="field">
+              <label for="tg-first">Имя</label>
+              <input id="tg-first" type="text" name="tg_first_name" value="{{ account.tg_first_name or '' }}" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="tg-last">Фамилия</label>
+              <input id="tg-last" type="text" name="tg_last_name" value="{{ account.tg_last_name or '' }}" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="tg-username">Юзернейм</label>
+            <input id="tg-username" type="text" name="tg_username" value="{{ account.tg_username or '' }}"
+                   placeholder="без @, оставьте пустым чтобы убрать" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="tg-bio">О себе</label>
+            <textarea id="tg-bio" name="tg_bio" maxlength="70" style="min-height:52px">{{ account.tg_bio or '' }}</textarea>
+            <div class="field__hint">Максимум 70 символов — ограничение Telegram.</div>
+          </div>
+          <div class="btn-row" style="margin-top:14px">
+            <button type="submit" class="btn btn-primary">Сохранить в Telegram</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# ---------- Сторис ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Сторис</h2>
+      <div class="card__desc">Публикация от имени этого аккаунта, видна всем</div>
+    </div>
+  </div>
+  <div class="card__body">
+    <form method="post" action="/accounts/{{ account.id }}/story" enctype="multipart/form-data">
+      <div class="field-grid cols-2" style="align-items:start">
+        <div class="field">
+          <label for="story-file">Фото или видео</label>
+          <input id="story-file" type="file" name="story_file" accept="image/*,video/*" required>
+        </div>
+        <div class="field">
+          <label for="story-caption">Подпись (опционально)</label>
+          <textarea id="story-caption" name="caption" style="min-height:40px"></textarea>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button type="submit" class="btn btn-primary">Опубликовать сторис</button>
+      </div>
+    </form>
   </div>
 </div>
 

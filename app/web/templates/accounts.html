@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import account_status, empty_row %}
+{% from "_macros.html" import account_status, empty_row, account_avatar %}
 
 {% block title %}Аккаунты — Diablogram AI{% endblock %}
 {% block page_title %}Аккаунты{% endblock %}
@@ -158,8 +158,14 @@
                 <input type="checkbox" name="account_ids" value="{{ a.id }}" aria-label="Выбрать {{ a.label }}">
               </td>
               <td>
-                <a class="cell-link" href="/accounts/{{ a.id }}">{{ a.label }}</a>
-                {% if a.status_note %}<div class="cell-sub truncate" style="max-width:220px">{{ a.status_note }}</div>{% endif %}
+                <div style="display:flex; align-items:center; gap:10px">
+                  {{ account_avatar(a, 'sm') }}
+                  <div>
+                    <a class="cell-link" href="/accounts/{{ a.id }}">{{ a.label }}</a>
+                    {% if a.tg_username %}<div class="cell-sub mono dim">@{{ a.tg_username }}</div>{% endif %}
+                    {% if a.status_note %}<div class="cell-sub truncate" style="max-width:220px">{{ a.status_note }}</div>{% endif %}
+                  </div>
+                </div>
               </td>
               <td class="col-tight">{{ account_status(a.status.value) }}</td>
               <td class="muted">{{ a.persona.name if a.persona else '—' }}</td>

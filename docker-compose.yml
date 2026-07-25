@@ -33,6 +33,7 @@ services:
     env_file: .env
     volumes:
       - ./sessions:/app/sessions
+      - ./data:/app/data
     depends_on:
       migrate:
         condition: service_completed_successfully

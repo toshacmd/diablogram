@@ -37,3 +37,13 @@
 {% macro chip(value, empty='—') -%}
 {% if value %}<span class="chip">{{ value }}</span>{% else %}<span class="dim">{{ empty }}</span>{% endif %}
 {%- endmacro %}
+
+
+{# Аватар аккаунта: реальное фото из Telegram (если синхронизировано), иначе — буква названия #}
+{% macro account_avatar(account, size='sm') -%}
+<span class="avatar avatar--{{ size }}">
+  <img src="/accounts/{{ account.id }}/avatar" alt=""
+       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+  <span class="avatar__fallback">{{ (account.tg_first_name or account.label or '?')[0] | upper }}</span>
+</span>
+{%- endmacro %}
