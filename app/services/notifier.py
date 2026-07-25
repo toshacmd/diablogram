@@ -7,6 +7,7 @@ import logging
 import httpx
 
 from app.config import get_settings
+from app.models import CommentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -29,17 +30,20 @@ async def notify_owner(text: str) -> None:
             logger.exception("Failed to deliver owner notification")
 
 
-async def notify_account_limited(account_label: str, retry_after_seconds: int) -> None:
-    minutes = max(retry_after_seconds // 60, 1)
-    await notify_owner(f"⏳ Аккаунт «{account_label}» временно ограничен Telegram (~{minutes} мин).")
-
-
 async def notify_account_banned(account_label: str, reason: str) -> None:
+    """Account-health alert — fired outside of any specific comment attempt
+    too (e.g. from the periodic reconnect loop in sync.py), so it stays
+    separate from notify_comment_result below."""
     await notify_owner(f"🚫 Аккаунт «{account_label}» заблокирован/не авторизован: {reason}")
 
 
-async def notify_channel_banned(account_label: str, channel_title: str, reason: str) -> None:
-    await notify_owner(
-        f"⛔ Аккаунт «{account_label}» забанен в канале «{channel_title}» — закрепление снято, "
-        f"аккаунт остаётся активным для остальных каналов.\n{reason}"
-    )
+async def notify_comment_result(account_label: str, channel_title: str, status: CommentStatus, error: str | None) -> None:
+    """One notification per comment attempt, covering every terminal
+    outcome — replaces the old per-failure-reason alerts (rate limited,
+    banned, channel banned), which duplicated whatever this already says."""
+    if status == CommentStatus.POSTED:
+        await notify_owner(f"✅ «{account_label}» опубликовал комментарий в «{channel_title}»")
+    elif status == CommentStatus.SKIPPED_FILTER:
+        await notify_owner(f"🚫 «{account_label}»: комментарий в «{channel_title}» отфильтрован — {error}")
+    else:
+        await notify_owner(f"❌ «{account_label}»: ошибка комментария в «{channel_title}» — {error}")

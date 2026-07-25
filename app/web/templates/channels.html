@@ -68,6 +68,57 @@
   </div>
 </details>
 
+{# ---------- Массовое добавление каналов ---------- #}
+<details class="card">
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить каналы пачкой</span>
+      <span class="summary__desc">Список username через запятую, без «@»</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    {% if accounts %}
+      <form method="post" action="/channels/add-bulk">
+        <div class="field">
+          <label for="ch-bulk-usernames">Username каналов</label>
+          <textarea id="ch-bulk-usernames" name="usernames" required
+                    placeholder="mychannel1, mychannel2, mychannel3" style="min-height:80px"></textarea>
+          <div class="field__hint">Только публичные каналы по @username — для приватных используйте одиночное добавление по ссылке-приглашению выше.</div>
+        </div>
+        <div class="field">
+          <label for="ch-bulk-account">Через какой аккаунт получить данные</label>
+          <select id="ch-bulk-account" name="account_id">
+            {% for a in accounts %}<option value="{{ a.id }}">{{ a.label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="btn-row" style="margin-top:18px">
+          <button type="submit" class="btn btn-primary">Добавить пачкой</button>
+        </div>
+      </form>
+    {% else %}
+      <div class="alert is-warn" style="margin:0">
+        <span class="alert__icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>
+          </svg>
+        </span>
+        <span>Сначала добавьте хотя бы один аккаунт.</span>
+      </div>
+    {% endif %}
+  </div>
+</details>
+
 {# ---------- Список каналов ---------- #}
 <div class="card">
   <div class="card__head">

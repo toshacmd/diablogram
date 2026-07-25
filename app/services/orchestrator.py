@@ -132,9 +132,6 @@ async def handle_new_post(channel_tg_id: int, message: Message) -> None:
         eligible = [a for a in assigned_accounts if await _is_eligible(session, a)]
         if not eligible:
             logger.warning("No eligible accounts to comment on channel %s (%s)", channel.title, channel_tg_id)
-            await notifier.notify_owner(
-                f"⚠️ Новый пост на «{channel.title}», но нет доступных аккаунтов для комментария."
-            )
             return
 
         count = random.randint(settings_row.commenters_min, settings_row.commenters_max)
@@ -181,13 +178,16 @@ async def _post_comment(
     async with async_session_factory() as session:
         log_entry = await session.get(CommentLog, log_id)
         account = await session.get(Account, account_id, options=[joinedload(Account.persona)])
+        channel = await session.get(Channel, channel_id)
         if log_entry is None or account is None:
             return
+        channel_title = channel.title if channel else str(channel_id)
 
         if not await _is_eligible(session, account):
             log_entry.status = CommentStatus.FAILED
             log_entry.error = "Account no longer eligible at post time"
             await session.commit()
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
 
         persona_prompt = account.persona.prompt_text if account.persona else _DEFAULT_PERSONA_PROMPT
@@ -200,6 +200,7 @@ async def _post_comment(
             log_entry.status = CommentStatus.FAILED
             log_entry.error = f"AI generation error: {e}"
             await session.commit()
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
 
         signature = (account.signature or "").strip()
@@ -214,6 +215,7 @@ async def _post_comment(
                 log_entry.status = CommentStatus.SKIPPED_FILTER
                 log_entry.error = f"Blocked by content filter: matched term {matched!r}"
                 await session.commit()
+                await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
                 return
 
         log_entry.generated_text = generated_text
@@ -227,7 +229,7 @@ async def _post_comment(
             log_entry.status = CommentStatus.FAILED
             log_entry.error = f"Rate limited for {e.retry_after_seconds}s"
             await session.commit()
-            await notifier.notify_account_limited(account.label, e.retry_after_seconds)
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
         except AccountBannedError as e:
             account.status = AccountStatus.BANNED
@@ -235,7 +237,7 @@ async def _post_comment(
             log_entry.status = CommentStatus.FAILED
             log_entry.error = str(e)
             await session.commit()
-            await notifier.notify_account_banned(account.label, str(e))
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
         except ChannelBannedError as e:
             # Restricted in this one channel only (e.g. by a moderator) — the
@@ -254,17 +256,18 @@ async def _post_comment(
             log_entry.status = CommentStatus.FAILED
             log_entry.error = str(e)
             await session.commit()
-            channel = await session.get(Channel, channel_id)
-            await notifier.notify_channel_banned(account.label, channel.title if channel else str(channel_id), str(e))
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
         except Exception as e:  # noqa: BLE001
             logger.exception("Failed to send comment for log %s", log_id)
             log_entry.status = CommentStatus.FAILED
             log_entry.error = str(e)
             await session.commit()
+            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
             return
 
         log_entry.status = CommentStatus.POSTED
         log_entry.comment_message_id = message_id
         log_entry.posted_at = dt.datetime.now(dt.timezone.utc)
         await session.commit()
+        await notifier.notify_comment_result(account.label, channel_title, log_entry.status, None)

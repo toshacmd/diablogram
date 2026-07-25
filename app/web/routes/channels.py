@@ -87,6 +87,71 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
     return RedirectResponse(f"/channels?flash=Канал «{title}» добавлен", status_code=303)
 
 
+@router.post("/channels/add-bulk")
+async def add_channels_bulk(request: Request, account_id: int = Form(...), usernames: str = Form(...)):
+    names = [u.strip().lstrip("@") for u in usernames.split(",")]
+    names = [n for n in names if n]
+    if not names:
+        return RedirectResponse("/channels?flash=Список username пуст", status_code=303)
+
+    added: list[str] = []
+    pending: list[str] = []
+    errors: list[str] = []
+
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/channels?flash=Аккаунт не найден", status_code=303)
+
+        for name in names:
+            try:
+                tg_channel_id, title, username, invite_link = await resolve_channel_standalone(account, name)
+            except AccountLimitedError as e:
+                errors.append(
+                    f"{name}: аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин) — "
+                    "остальные из списка не проверялись"
+                )
+                break
+            except AccountBannedError as e:
+                errors.append(f"{name}: аккаунт заблокирован ({e}) — остальные из списка не проверялись")
+                break
+            except JoinRequestPendingError:
+                pending.append(name)
+                continue
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{name}: {e}")
+                continue
+
+            existing = (
+                await session.execute(select(Channel).where(Channel.tg_channel_id == tg_channel_id))
+            ).scalar_one_or_none()
+            if existing:
+                existing.title = title
+                existing.username = username
+                existing.invite_link = invite_link or existing.invite_link
+                existing.is_active = True
+            else:
+                session.add(
+                    Channel(
+                        tg_channel_id=tg_channel_id,
+                        title=title,
+                        username=username,
+                        invite_link=invite_link,
+                        is_active=True,
+                    )
+                )
+            added.append(title)
+
+        await session.commit()
+
+    flash = f"Добавлено каналов: {len(added)} из {len(names)}"
+    if pending:
+        flash += f". Заявка на вступление отправлена: {', '.join(pending)}"
+    if errors:
+        flash += f". Ошибки: {'; '.join(errors)}"
+    return RedirectResponse(f"/channels?flash={flash}", status_code=303)
+
+
 @router.post("/channels/{channel_id}/toggle")
 async def toggle_channel(channel_id: int):
     async with async_session_factory() as session:
