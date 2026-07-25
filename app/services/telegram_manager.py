@@ -16,6 +16,7 @@ from telethon.errors import (
     AuthKeyUnregisteredError,
     ChatWriteForbiddenError,
     FloodWaitError,
+    InviteRequestSentError,
     PeerFloodError,
     UserAlreadyParticipantError,
     UserBannedInChannelError,
@@ -28,7 +29,12 @@ from telethon.utils import get_peer_id
 
 from app.config import get_settings
 from app.crypto import decrypt
-from app.services.exceptions import AccountBannedError, AccountLimitedError, ChannelBannedError
+from app.services.exceptions import (
+    AccountBannedError,
+    AccountLimitedError,
+    ChannelBannedError,
+    JoinRequestPendingError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +193,10 @@ class TelegramManager:
         except UserAlreadyParticipantError:
             info = await client(functions.messages.CheckChatInviteRequest(invite_hash))
             return info.chat
+        except InviteRequestSentError as e:
+            # Not a failure — this chat has "approve new members" on, so the
+            # account is now pending manual approval by an admin.
+            raise JoinRequestPendingError(str(e)) from e
         except FloodWaitError as e:
             raise AccountLimitedError(e.seconds) from e
         except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
@@ -208,6 +218,10 @@ class TelegramManager:
             # before commenting"). Join it too, if there is one.
             await self._join_discussion_group(client, entity)
             return entity
+        except InviteRequestSentError as e:
+            # Not a failure — the chat/channel has "approve new members" on,
+            # so the account is now pending manual approval by an admin.
+            raise JoinRequestPendingError(str(e)) from e
         except FloodWaitError as e:
             raise AccountLimitedError(e.seconds) from e
         except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:

@@ -15,3 +15,9 @@ class ChannelBannedError(Exception):
     """Raised when an account is banned/restricted from writing in one
     specific channel/chat (e.g. by a moderator) — the account itself is
     otherwise fine and can still be used elsewhere."""
+
+
+class JoinRequestPendingError(Exception):
+    """Raised when a join attempt only created a pending request instead of
+    immediate membership — the chat/channel has "approve new members" on.
+    Not a failure: the account just needs manual approval from an admin."""

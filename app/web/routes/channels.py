@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, Channel, ChannelBan, CommentLog
-from app.services.exceptions import AccountBannedError, AccountLimitedError
+from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import resolve_channel_standalone
 from app.web.templating import templates
 
@@ -55,6 +55,12 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
             return RedirectResponse(f"/channels?flash={flash}", status_code=303)
         except AccountBannedError as e:
             return RedirectResponse(f"/channels?flash=Аккаунт заблокирован/не авторизован: {e}", status_code=303)
+        except JoinRequestPendingError:
+            flash = (
+                "Заявка на вступление отправлена, ждёт одобрения администратора — "
+                "добавьте канал ещё раз после одобрения"
+            )
+            return RedirectResponse(f"/channels?flash={flash}", status_code=303)
         except Exception as e:  # noqa: BLE001
             return RedirectResponse(f"/channels?flash=Не удалось добавить канал: {e}", status_code=303)
 

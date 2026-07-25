@@ -7,7 +7,7 @@ from sqlalchemy.orm import joinedload
 from app.crypto import encrypt
 from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, CommentLog, Persona
-from app.services.exceptions import AccountBannedError, AccountLimitedError
+from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import join_channel_standalone
 from app.web.templating import templates
 
@@ -216,6 +216,7 @@ async def update_assignments(request: Request, account_id: int):
     channel_ids = {int(v) for v in form.getlist("channel_ids")}
 
     join_errors: list[str] = []
+    pending_requests: list[str] = []
 
     async with async_session_factory() as session:
         account = await session.get(Account, account_id)
@@ -251,10 +252,14 @@ async def update_assignments(request: Request, account_id: int):
             target = channel.username or channel.tg_channel_id
             try:
                 await join_channel_standalone(account, target, invite_link=channel.invite_link)
+            except JoinRequestPendingError:
+                pending_requests.append(channel.title)
             except (AccountLimitedError, AccountBannedError, Exception) as e:  # noqa: BLE001
                 join_errors.append(f"{channel.title}: {e}")
 
     flash = "Каналы обновлены"
+    if pending_requests:
+        flash += f". Заявка на вступление отправлена, ждёт одобрения администратора: {', '.join(pending_requests)}"
     if join_errors:
         flash += f". Не удалось вступить в некоторые каналы: {'; '.join(join_errors)}"
     return RedirectResponse(f"/accounts/{account_id}?flash={flash}", status_code=303)
