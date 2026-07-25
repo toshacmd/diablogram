@@ -89,12 +89,25 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
 
 @router.post("/channels/add-bulk")
 async def add_channels_bulk(request: Request, account_id: int = Form(...), usernames: str = Form(...)):
-    names = [u.strip().lstrip("@") for u in usernames.split(",")]
-    names = [n for n in names if n]
+    raw_names = [u.strip().lstrip("@") for u in usernames.split(",")]
+    seen: set[str] = set()
+    names: list[str] = []
+    duplicates: list[str] = []
+    for n in raw_names:
+        if not n:
+            continue
+        key = n.lower()
+        if key in seen:
+            duplicates.append(n)
+            continue
+        seen.add(key)
+        names.append(n)
+
     if not names:
         return RedirectResponse("/channels?flash=Список username пуст", status_code=303)
 
     added: list[str] = []
+    updated: list[str] = []
     pending: list[str] = []
     errors: list[str] = []
 
@@ -130,6 +143,7 @@ async def add_channels_bulk(request: Request, account_id: int = Form(...), usern
                 existing.username = username
                 existing.invite_link = invite_link or existing.invite_link
                 existing.is_active = True
+                updated.append(title)
             else:
                 session.add(
                     Channel(
@@ -140,11 +154,15 @@ async def add_channels_bulk(request: Request, account_id: int = Form(...), usern
                         is_active=True,
                     )
                 )
-            added.append(title)
+                added.append(title)
 
         await session.commit()
 
-    flash = f"Добавлено каналов: {len(added)} из {len(names)}"
+    flash = f"Новых каналов: {len(added)}"
+    if updated:
+        flash += f". Уже были в базе (обновлены): {', '.join(updated)}"
+    if duplicates:
+        flash += f". Повторы в списке пропущены: {', '.join(duplicates)}"
     if pending:
         flash += f". Заявка на вступление отправлена: {', '.join(pending)}"
     if errors:
