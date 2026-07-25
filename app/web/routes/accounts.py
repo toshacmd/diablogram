@@ -13,7 +13,7 @@ from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, CommentLog, Persona
 from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import (
-    join_channel_standalone,
+    TelegramManager,
     post_story_standalone,
     sync_profile_standalone,
     update_avatar_standalone,
@@ -261,18 +261,41 @@ async def update_assignments(request: Request, account_id: int):
         await session.commit()
 
         # Make sure the account can actually see/comment in each newly assigned
-        # channel — join it if not already a member.
+        # channel — join it if not already a member. One connection for the
+        # whole batch (not one per channel) — reconnecting per channel was
+        # slow enough on a large "select all" batch to trip nginx's gateway
+        # timeout.
+        new_channels = []
         for cid in new_ids:
             channel = await session.get(Channel, cid)
-            if channel is None:
-                continue
-            target = channel.username or channel.tg_channel_id
+            if channel is not None:
+                new_channels.append(channel)
+
+        if new_channels:
+            temp_manager = TelegramManager()
             try:
-                await join_channel_standalone(account, target, invite_link=channel.invite_link)
-            except JoinRequestPendingError:
-                pending_requests.append(channel.title)
-            except (AccountLimitedError, AccountBannedError, Exception) as e:  # noqa: BLE001
-                join_errors.append(f"{channel.title}: {e}")
+                await temp_manager.connect_account(account)
+            except AccountLimitedError as e:
+                join_errors.append(
+                    f"аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин) — "
+                    "вступление не выполнено ни в один канал"
+                )
+            except AccountBannedError as e:
+                join_errors.append(f"аккаунт заблокирован ({e}) — вступление не выполнено ни в один канал")
+            except Exception as e:  # noqa: BLE001
+                join_errors.append(f"не удалось подключиться: {e} — вступление не выполнено ни в один канал")
+            else:
+                try:
+                    for channel in new_channels:
+                        target = channel.username or channel.tg_channel_id
+                        try:
+                            await temp_manager.join_channel(account.id, target, invite_link=channel.invite_link)
+                        except JoinRequestPendingError:
+                            pending_requests.append(channel.title)
+                        except (AccountLimitedError, AccountBannedError, Exception) as e:  # noqa: BLE001
+                            join_errors.append(f"{channel.title}: {e}")
+                finally:
+                    await temp_manager.disconnect_all()
 
     flash = "Каналы обновлены"
     if pending_requests:
