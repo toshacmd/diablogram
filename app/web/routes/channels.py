@@ -2,11 +2,12 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from telethon.utils import get_peer_id
 
 from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, Channel, ChannelBan, CommentLog
 from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
-from app.services.telegram_manager import resolve_channel_standalone
+from app.services.telegram_manager import TelegramManager, extract_invite_hash, resolve_channel_standalone
 from app.web.templating import templates
 
 router = APIRouter()
@@ -116,45 +117,67 @@ async def add_channels_bulk(request: Request, account_id: int = Form(...), usern
         if account is None:
             return RedirectResponse("/channels?flash=Аккаунт не найден", status_code=303)
 
-        for name in names:
-            try:
-                tg_channel_id, title, username, invite_link = await resolve_channel_standalone(account, name)
-            except AccountLimitedError as e:
-                errors.append(
-                    f"{name}: аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин) — "
-                    "остальные из списка не проверялись"
-                )
-                break
-            except AccountBannedError as e:
-                errors.append(f"{name}: аккаунт заблокирован ({e}) — остальные из списка не проверялись")
-                break
-            except JoinRequestPendingError:
-                pending.append(name)
-                continue
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"{name}: {e}")
-                continue
+        # One connection for the whole batch — resolve_channel_standalone
+        # opens and closes a fresh Telegram connection per call, which for
+        # more than a handful of channels in one request was slow enough to
+        # trip nginx's gateway timeout.
+        temp_manager = TelegramManager()
+        try:
+            await temp_manager.connect_account(account)
+        except AccountLimitedError as e:
+            flash = f"Аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин), попробуйте позже"
+            return RedirectResponse(f"/channels?flash={flash}", status_code=303)
+        except AccountBannedError as e:
+            return RedirectResponse(f"/channels?flash=Аккаунт заблокирован/не авторизован: {e}", status_code=303)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/channels?flash=Не удалось подключиться: {e}", status_code=303)
 
-            existing = (
-                await session.execute(select(Channel).where(Channel.tg_channel_id == tg_channel_id))
-            ).scalar_one_or_none()
-            if existing:
-                existing.title = title
-                existing.username = username
-                existing.invite_link = invite_link or existing.invite_link
-                existing.is_active = True
-                updated.append(title)
-            else:
-                session.add(
-                    Channel(
-                        tg_channel_id=tg_channel_id,
-                        title=title,
-                        username=username,
-                        invite_link=invite_link,
-                        is_active=True,
+        try:
+            for name in names:
+                try:
+                    entity = await temp_manager.resolve_channel(account.id, name)
+                    tg_channel_id = get_peer_id(entity)
+                    title = entity.title
+                    username = getattr(entity, "username", None)
+                    invite_link = name if extract_invite_hash(name) else None
+                except AccountLimitedError as e:
+                    errors.append(
+                        f"{name}: аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин) — "
+                        "остальные из списка не проверялись"
                     )
-                )
-                added.append(title)
+                    break
+                except AccountBannedError as e:
+                    errors.append(f"{name}: аккаунт заблокирован ({e}) — остальные из списка не проверялись")
+                    break
+                except JoinRequestPendingError:
+                    pending.append(name)
+                    continue
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{name}: {e}")
+                    continue
+
+                existing = (
+                    await session.execute(select(Channel).where(Channel.tg_channel_id == tg_channel_id))
+                ).scalar_one_or_none()
+                if existing:
+                    existing.title = title
+                    existing.username = username
+                    existing.invite_link = invite_link or existing.invite_link
+                    existing.is_active = True
+                    updated.append(title)
+                else:
+                    session.add(
+                        Channel(
+                            tg_channel_id=tg_channel_id,
+                            title=title,
+                            username=username,
+                            invite_link=invite_link,
+                            is_active=True,
+                        )
+                    )
+                    added.append(title)
+        finally:
+            await temp_manager.disconnect_all()
 
         await session.commit()
 
