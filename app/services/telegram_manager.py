@@ -194,18 +194,40 @@ class TelegramManager:
 
     async def join_channel(self, account_id: int, username_or_id: str | int, invite_link: str | None = None):
         invite_hash = extract_invite_hash(invite_link) or extract_invite_hash(username_or_id)
-        if invite_hash:
-            return await self.join_by_invite(account_id, invite_hash)
-
         client = self.get_client(account_id)
         try:
-            entity = await client.get_entity(username_or_id)
-            await client(functions.channels.JoinChannelRequest(entity))
+            if invite_hash:
+                entity = await self.join_by_invite(account_id, invite_hash)
+            else:
+                entity = await client.get_entity(username_or_id)
+                await client(functions.channels.JoinChannelRequest(entity))
+
+            # Comments live in the channel's linked discussion group, not the
+            # channel itself — being a channel member alone isn't enough to
+            # post there (Telegram rejects with "join the discussion group
+            # before commenting"). Join it too, if there is one.
+            await self._join_discussion_group(client, entity)
             return entity
         except FloodWaitError as e:
             raise AccountLimitedError(e.seconds) from e
         except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
             raise AccountBannedError(str(e)) from e
+
+    async def _join_discussion_group(self, client: TelegramClient, channel_entity) -> None:
+        full = await client(functions.channels.GetFullChannelRequest(channel_entity))
+        linked_chat_id = getattr(full.full_chat, "linked_chat_id", None)
+        if not linked_chat_id:
+            return  # comments disabled, or this entity has no separate discussion group
+
+        discussion_chat = next((c for c in full.chats if c.id == linked_chat_id), None)
+        if discussion_chat is None:
+            logger.warning("Linked discussion group %s not found in GetFullChannel response", linked_chat_id)
+            return
+
+        try:
+            await client(functions.channels.JoinChannelRequest(discussion_chat))
+        except UserAlreadyParticipantError:
+            pass
 
     async def resolve_channel(self, account_id: int, username_or_link: str):
         invite_hash = extract_invite_hash(username_or_link)
