@@ -5,6 +5,7 @@ effect without restarting the worker process.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 
@@ -22,6 +23,11 @@ logger = logging.getLogger(__name__)
 # Channels currently missing a watcher — tracked so the warning logs only on
 # the transition into that state, not every 60s sync cycle it persists.
 _channels_without_watcher: set[int] = set()
+
+# Pause between join attempts in process_pending_joins — joining many
+# channels back-to-back with no pacing (e.g. after a large "select all"
+# batch) was enough to trip Telegram's flood-wait protection.
+_JOIN_PACING_SECONDS = 3
 
 
 async def refresh_connections_and_watchers() -> None:
@@ -108,11 +114,13 @@ async def process_pending_joins() -> None:
             .all()
         )
 
+        limited_this_cycle: set[int] = set()
+
         for assignment in pending:
             account = assignment.account
             channel = assignment.channel
-            if not manager.is_connected(account.id):
-                continue  # not connected yet (or banned/disabled) — retried next cycle
+            if not manager.is_connected(account.id) or account.id in limited_this_cycle:
+                continue  # not connected, or already flood-limited this cycle — retried next cycle
 
             target = channel.username or channel.tg_channel_id
             try:
@@ -122,6 +130,8 @@ async def process_pending_joins() -> None:
             except AccountLimitedError as e:
                 account.status = AccountStatus.LIMITED
                 account.limited_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=e.retry_after_seconds)
+                account.status_note = f"Флуд-лимит при вступлении в «{channel.title}» ({e.retry_after_seconds}s)"
+                limited_this_cycle.add(account.id)  # stop hammering it — the rest retry next cycle
                 # join_status stays PENDING — retried automatically once active again
             except AccountBannedError as e:
                 account.status = AccountStatus.BANNED
@@ -137,3 +147,4 @@ async def process_pending_joins() -> None:
                 assignment.join_status = JoinStatus.JOINED
                 assignment.join_error = None
             await session.commit()
+            await asyncio.sleep(_JOIN_PACING_SECONDS)

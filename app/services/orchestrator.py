@@ -226,6 +226,7 @@ async def _post_comment(
         except AccountLimitedError as e:
             account.status = AccountStatus.LIMITED
             account.limited_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=e.retry_after_seconds)
+            account.status_note = f"Флуд-лимит при комментировании «{channel_title}» ({e.retry_after_seconds}s)"
             log_entry.status = CommentStatus.FAILED
             log_entry.error = f"Rate limited for {e.retry_after_seconds}s"
             await session.commit()
