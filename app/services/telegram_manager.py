@@ -424,16 +424,6 @@ async def resolve_channel_standalone(account, username_or_link: str) -> tuple[in
         await temp.disconnect_all()
 
 
-async def join_channel_standalone(account, username_or_id: str | int, invite_link: str | None = None) -> None:
-    """One-off join using a throwaway connection, mirroring resolve_channel_standalone."""
-    temp = TelegramManager()
-    await temp.connect_account(account)
-    try:
-        await temp.join_channel(account.id, username_or_id, invite_link=invite_link)
-    finally:
-        await temp.disconnect_all()
-
-
 async def sync_profile_standalone(account) -> tuple[User, bytes | None]:
     """One-off fetch of the account's live Telegram profile + avatar, mirroring
     resolve_channel_standalone."""

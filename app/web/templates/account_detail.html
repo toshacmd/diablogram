@@ -297,11 +297,19 @@
         </label>
         <div class="check-grid">
           {% for c in channels %}
+          {% set a = assigned.get(c.id) %}
           <label class="check">
-            <input type="checkbox" name="channel_ids" value="{{ c.id }}" {{ 'checked' if c.id in assigned }}>
+            <input type="checkbox" name="channel_ids" value="{{ c.id }}" {{ 'checked' if a }}>
             <span class="check__text">
               {{ c.title }}
               <span class="check__hint">{{ c.username or 'приватный' }}</span>
+              {% if a and a.join_status.value == 'pending' %}
+                <span class="chip is-empty">вступление в очереди</span>
+              {% elif a and a.join_status.value == 'pending_approval' %}
+                <span class="chip" style="color:var(--c-warn); border-color:var(--c-warn)">ждёт одобрения админа</span>
+              {% elif a and a.join_status.value == 'failed' %}
+                <span class="chip" style="color:var(--c-bad); border-color:var(--c-bad)" title="{{ a.join_error }}">ошибка вступления</span>
+              {% endif %}
             </span>
           </label>
           {% endfor %}

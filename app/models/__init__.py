@@ -1,6 +1,6 @@
 from app.models.account import Account, AccountStatus
 from app.models.channel import Channel
-from app.models.assignment import AccountChannelAssignment
+from app.models.assignment import AccountChannelAssignment, JoinStatus
 from app.models.persona import Persona
 from app.models.comment_log import CommentLog, CommentStatus
 from app.models.channel_ban import ChannelBan
@@ -13,6 +13,7 @@ __all__ = [
     "AccountStatus",
     "Channel",
     "AccountChannelAssignment",
+    "JoinStatus",
     "Persona",
     "CommentLog",
     "CommentStatus",

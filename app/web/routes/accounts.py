@@ -10,10 +10,18 @@ from telethon.errors import UsernameInvalidError, UsernameNotModifiedError, User
 
 from app.crypto import encrypt
 from app.db import async_session_factory
-from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, ChannelBan, CommentLog, Persona
-from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
+from app.models import (
+    Account,
+    AccountChannelAssignment,
+    AccountStatus,
+    Channel,
+    ChannelBan,
+    CommentLog,
+    JoinStatus,
+    Persona,
+)
+from app.services.exceptions import AccountBannedError, AccountLimitedError
 from app.services.telegram_manager import (
-    TelegramManager,
     post_story_standalone,
     sync_profile_standalone,
     update_avatar_standalone,
@@ -113,17 +121,16 @@ async def account_detail(request: Request, account_id: int):
             return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
         personas = (await session.execute(select(Persona).order_by(Persona.name))).scalars().all()
         channels = (await session.execute(select(Channel).order_by(Channel.title))).scalars().all()
-        assigned = set(
-            (
+        assigned = {
+            row.channel_id: row
+            for row in (
                 await session.execute(
-                    select(AccountChannelAssignment.channel_id).where(
-                        AccountChannelAssignment.account_id == account_id
-                    )
+                    select(AccountChannelAssignment).where(AccountChannelAssignment.account_id == account_id)
                 )
             )
             .scalars()
             .all()
-        )
+        }
         channel_bans = (
             (
                 await session.execute(
@@ -232,9 +239,6 @@ async def update_assignments(request: Request, account_id: int):
     form = await request.form()
     channel_ids = {int(v) for v in form.getlist("channel_ids")}
 
-    join_errors: list[str] = []
-    pending_requests: list[str] = []
-
     async with async_session_factory() as session:
         account = await session.get(Account, account_id)
         if account is None:
@@ -256,52 +260,22 @@ async def update_assignments(request: Request, account_id: int):
             if row.channel_id not in channel_ids:
                 await session.delete(row)
         for cid in new_ids:
-            session.add(AccountChannelAssignment(account_id=account_id, channel_id=cid))
+            session.add(AccountChannelAssignment(account_id=account_id, channel_id=cid, join_status=JoinStatus.PENDING))
 
         await session.commit()
 
-        # Make sure the account can actually see/comment in each newly assigned
-        # channel — join it if not already a member. One connection for the
-        # whole batch (not one per channel) — reconnecting per channel was
-        # slow enough on a large "select all" batch to trip nginx's gateway
-        # timeout.
-        new_channels = []
-        for cid in new_ids:
-            channel = await session.get(Channel, cid)
-            if channel is not None:
-                new_channels.append(channel)
-
-        if new_channels:
-            temp_manager = TelegramManager()
-            try:
-                await temp_manager.connect_account(account)
-            except AccountLimitedError as e:
-                join_errors.append(
-                    f"аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин) — "
-                    "вступление не выполнено ни в один канал"
-                )
-            except AccountBannedError as e:
-                join_errors.append(f"аккаунт заблокирован ({e}) — вступление не выполнено ни в один канал")
-            except Exception as e:  # noqa: BLE001
-                join_errors.append(f"не удалось подключиться: {e} — вступление не выполнено ни в один канал")
-            else:
-                try:
-                    for channel in new_channels:
-                        target = channel.username or channel.tg_channel_id
-                        try:
-                            await temp_manager.join_channel(account.id, target, invite_link=channel.invite_link)
-                        except JoinRequestPendingError:
-                            pending_requests.append(channel.title)
-                        except (AccountLimitedError, AccountBannedError, Exception) as e:  # noqa: BLE001
-                            join_errors.append(f"{channel.title}: {e}")
-                finally:
-                    await temp_manager.disconnect_all()
-
+    # Joining new channels (+ their discussion groups) happens in the
+    # background — the worker picks up "pending" assignments on its next
+    # sync cycle (see app.services.sync.process_pending_joins) and reuses the
+    # connection it already keeps open for this account. Doing it here,
+    # synchronously, per channel, was slow enough on a large "select all"
+    # batch to trip nginx's gateway timeout.
     flash = "Каналы обновлены"
-    if pending_requests:
-        flash += f". Заявка на вступление отправлена, ждёт одобрения администратора: {', '.join(pending_requests)}"
-    if join_errors:
-        flash += f". Не удалось вступить в некоторые каналы: {'; '.join(join_errors)}"
+    if new_ids:
+        flash += (
+            ". Вступление в новые каналы выполнится в фоне (обычно в течение минуты) — "
+            "статус видно в списке закреплённых каналов ниже"
+        )
     return RedirectResponse(f"/accounts/{account_id}?flash={flash}", status_code=303)
 
 

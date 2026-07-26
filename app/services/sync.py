@@ -5,14 +5,16 @@ effect without restarting the worker process.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.db import async_session_factory
-from app.models import Account, AccountChannelAssignment, AccountStatus, Channel
+from app.models import Account, AccountChannelAssignment, AccountStatus, Channel, JoinStatus
 from app.services import notifier
-from app.services.exceptions import AccountBannedError
+from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -81,3 +83,57 @@ async def refresh_connections_and_watchers() -> None:
 
             _channels_without_watcher.discard(channel.id)
             await manager.set_watcher(channel.tg_channel_id, watcher.id)
+
+    await process_pending_joins()
+
+
+async def process_pending_joins() -> None:
+    """Joins accounts into their newly-assigned channels' discussion groups
+    in the background, reusing whatever connection the loop above already
+    keeps open. Replaces the old synchronous join-on-save flow in the web
+    panel, which was slow enough per-channel that a large "select all
+    channels" batch could trip nginx's gateway timeout."""
+    async with async_session_factory() as session:
+        pending = (
+            (
+                await session.execute(
+                    select(AccountChannelAssignment)
+                    .options(
+                        joinedload(AccountChannelAssignment.account), joinedload(AccountChannelAssignment.channel)
+                    )
+                    .where(AccountChannelAssignment.join_status == JoinStatus.PENDING)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        for assignment in pending:
+            account = assignment.account
+            channel = assignment.channel
+            if not manager.is_connected(account.id):
+                continue  # not connected yet (or banned/disabled) — retried next cycle
+
+            target = channel.username or channel.tg_channel_id
+            try:
+                await manager.join_channel(account.id, target, invite_link=channel.invite_link)
+            except JoinRequestPendingError:
+                assignment.join_status = JoinStatus.PENDING_APPROVAL
+            except AccountLimitedError as e:
+                account.status = AccountStatus.LIMITED
+                account.limited_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=e.retry_after_seconds)
+                # join_status stays PENDING — retried automatically once active again
+            except AccountBannedError as e:
+                account.status = AccountStatus.BANNED
+                account.status_note = str(e)
+                assignment.join_status = JoinStatus.FAILED
+                assignment.join_error = str(e)
+                await notifier.notify_account_banned(account.label, str(e))
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Failed to join account %s to channel %s", account.id, channel.id)
+                assignment.join_status = JoinStatus.FAILED
+                assignment.join_error = str(e)
+            else:
+                assignment.join_status = JoinStatus.JOINED
+                assignment.join_error = None
+            await session.commit()
