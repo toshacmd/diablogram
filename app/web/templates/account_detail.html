@@ -73,6 +73,23 @@
               <span class="chip is-empty">не задан</span>
             {% endif %}
           </div>
+          {% if proxies %}
+          <div class="field">
+            <label for="ac-proxy-id">Прокси из списка</label>
+            <select id="ac-proxy-id" name="proxy_id">
+              <option value="">— вручную (поля ниже) —</option>
+              {% for p in proxies %}
+                <option value="{{ p.id }}" {{ 'selected' if account.proxy_id == p.id }}>
+                  {{ p.label or (p.proxy_host ~ ':' ~ p.proxy_port) }} ({{ p.proxy_type }})
+                </option>
+              {% endfor %}
+            </select>
+            <div class="field__hint">
+              Если выбран прокси из списка, при сохранении его значения перезапишут ручные поля ниже.
+              <a href="/proxies">Управление списком</a>
+            </div>
+          </div>
+          {% endif %}
           <div class="field-grid">
             <div class="field">
               <label for="ac-ptype">Тип</label>

@@ -45,6 +45,9 @@ services:
     env_file: .env
     volumes:
       - ./sessions:/app/sessions
+      # Shared with web: bulk profile-task media (web writes, worker reads)
+      # and cached avatars the worker updates after bulk avatar changes.
+      - ./data:/app/data
     depends_on:
       migrate:
         condition: service_completed_successfully

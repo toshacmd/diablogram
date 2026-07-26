@@ -10,6 +10,7 @@ import logging
 
 from app.services.orchestrator import handle_new_post, reconcile_orphaned_comments, scheduler
 from app.services.parser import execute_parse_run, get_next_queued_run_id, reconcile_orphaned_runs
+from app.services.profile_tasks import process_profile_tasks
 from app.services.seed import seed_builtin_personas
 from app.services.sync import refresh_connections_and_watchers
 from app.services.telegram_manager import manager
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_SECONDS = 60
 PARSE_POLL_INTERVAL_SECONDS = 10
+PROFILE_TASK_POLL_INTERVAL_SECONDS = 10
 
 
 async def _refresh_loop() -> None:
@@ -45,6 +47,18 @@ async def _parse_loop() -> None:
         await asyncio.sleep(PARSE_POLL_INTERVAL_SECONDS)
 
 
+async def _profile_task_loop() -> None:
+    """Executes bulk profile tasks (avatar/story/bio for many accounts) —
+    created as rows by the web panel, run here because the per-account
+    Telegram round trips need pacing and long-lived connections."""
+    while True:
+        try:
+            await process_profile_tasks()
+        except Exception:  # noqa: BLE001
+            logger.exception("Error while processing profile tasks")
+        await asyncio.sleep(PROFILE_TASK_POLL_INTERVAL_SECONDS)
+
+
 async def main() -> None:
     await seed_builtin_personas()
     await reconcile_orphaned_comments()
@@ -57,7 +71,7 @@ async def main() -> None:
     logger.info("Initial sync complete.")
 
     try:
-        await asyncio.gather(_refresh_loop(), _parse_loop())
+        await asyncio.gather(_refresh_loop(), _parse_loop(), _profile_task_loop())
     finally:
         scheduler.shutdown(wait=False)
         await manager.disconnect_all()

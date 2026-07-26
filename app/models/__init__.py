@@ -7,6 +7,8 @@ from app.models.channel_ban import ChannelBan
 from app.models.settings import GlobalSettings
 from app.models.scrape_account import ScrapeAccount
 from app.models.parse_run import ParseRun, ParseRunStatus, ParsedChannel
+from app.models.proxy import Proxy
+from app.models.profile_task import ProfileTask, ProfileTaskItem, ProfileTaskItemStatus, ProfileTaskKind
 
 __all__ = [
     "Account",
@@ -23,4 +25,9 @@ __all__ = [
     "ParseRun",
     "ParseRunStatus",
     "ParsedChannel",
+    "Proxy",
+    "ProfileTask",
+    "ProfileTaskItem",
+    "ProfileTaskItemStatus",
+    "ProfileTaskKind",
 ]

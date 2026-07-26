@@ -24,6 +24,12 @@ class Account(Base):
     session_string_enc: Mapped[str] = mapped_column(Text)
 
     # Per-account proxy. proxy_type is one of: socks5, socks4, http.
+    # These inline fields are the operational source the Telethon client is
+    # built from; proxy_id below only records which catalog entry (models/
+    # proxy.py) the values were copied from, if any.
+    proxy_id: Mapped[int | None] = mapped_column(
+        ForeignKey("proxies.id", ondelete="SET NULL"), nullable=True
+    )
     proxy_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     proxy_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     proxy_port: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -86,6 +86,18 @@
       <fieldset class="fieldset">
         <div class="fieldset__legend">Прокси</div>
         <p class="fieldset__note">Опционально. Свой прокси на аккаунт снижает риск связать аккаунты между собой.</p>
+        {% if proxies %}
+        <div class="field">
+          <label for="add-proxy-id">Прокси из списка</label>
+          <select id="add-proxy-id" name="proxy_id">
+            <option value="">— вручную (поля ниже) —</option>
+            {% for p in proxies %}
+              <option value="{{ p.id }}">{{ p.label or (p.proxy_host ~ ':' ~ p.proxy_port) }} ({{ p.proxy_type }})</option>
+            {% endfor %}
+          </select>
+          <div class="field__hint">Если выбран прокси из списка, ручные поля ниже игнорируются. <a href="/proxies">Управление списком</a></div>
+        </div>
+        {% endif %}
         <div class="field-grid">
           <div class="field">
             <label for="add-ptype">Тип</label>
@@ -117,6 +129,66 @@
 
       <div class="btn-row" style="margin-top:20px">
         <button type="submit" class="btn btn-primary">Добавить аккаунт</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+{# ---------- Массовое добавление аккаунтов из .session-файлов ---------- #}
+<details class="card">
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить аккаунты пачкой (.session)</span>
+      <span class="summary__desc">Файлы сессий Telethon + общий прокси из списка</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    <form method="post" action="/accounts/add-bulk-sessions" enctype="multipart/form-data">
+      <div class="field">
+        <label for="bs-files">Файлы .session</label>
+        <input id="bs-files" type="file" name="session_files" multiple required accept=".session">
+        <div class="field__hint">
+          Можно выбрать сразу много. Название аккаунта берётся из имени файла.
+          Повторы (по содержимому сессии) и уже добавленные аккаунты пропускаются.
+          Живость сессий проверится воркером при первом подключении.
+        </div>
+      </div>
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="bs-proxy">Прокси для всех</label>
+          <select id="bs-proxy" name="proxy_id">
+            <option value="">— без прокси —</option>
+            {% for p in proxies %}
+              <option value="{{ p.id }}">{{ p.label or (p.proxy_host ~ ':' ~ p.proxy_port) }} ({{ p.proxy_type }})</option>
+            {% endfor %}
+          </select>
+          <div class="field__hint">Закрепится за каждым добавленным аккаунтом. <a href="/proxies">Список прокси</a></div>
+        </div>
+        <div class="field">
+          <label for="bs-persona">Персона для всех</label>
+          <select id="bs-persona" name="persona_id">
+            <option value="">— без персоны —</option>
+            {% for p in personas %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="bs-cap">Лимит комментариев в сутки</label>
+          <input id="bs-cap" type="number" name="daily_comment_cap" value="20" min="0">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:18px">
+        <button type="submit" class="btn btn-primary">Добавить аккаунты</button>
       </div>
     </form>
   </div>
@@ -221,6 +293,114 @@
   </div>
 </form>
 
+{% if accounts %}
+{# ---------- Массовые действия с Telegram-профилем ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Массовые действия с профилем</h2>
+      <div class="card__desc">Аватар, сторис или био сразу для отмеченных в таблице аккаунтов — выполняется воркером в фоне с паузами</div>
+    </div>
+  </div>
+  <div class="card__body">
+    <form id="profile-task-form" method="post" action="/accounts/profile-tasks/create" enctype="multipart/form-data">
+      <input type="hidden" name="account_ids_csv" value="">
+      <div class="field-grid cols-3" style="align-items:start">
+        <div class="field">
+          <label for="pt-kind">Действие</label>
+          <select id="pt-kind" name="kind">
+            <option value="avatar">Установить аватар</option>
+            <option value="story">Опубликовать сторис</option>
+            <option value="bio">Изменить био</option>
+          </select>
+        </div>
+        <div class="field" data-pt-media>
+          <label for="pt-file">Файл</label>
+          <input id="pt-file" type="file" name="media_file" accept="image/*">
+          <div class="field__hint" data-pt-media-hint>Изображение — будет вписано в квадрат целиком, без обрезки.</div>
+        </div>
+        <div class="field">
+          <label>Кому применить</label>
+          <label class="check-card">
+            <input type="checkbox" name="apply_all">
+            <span class="check__text">
+              Всем аккаунтам
+              <span class="check__hint">Игнорирует отметки в таблице</span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="field" data-pt-text style="display:none">
+        <label for="pt-text" data-pt-text-label>Текст био</label>
+        <textarea id="pt-text" name="text" style="min-height:56px" maxlength="200"></textarea>
+        <div class="field__hint" data-pt-text-hint>Максимум 70 символов — ограничение Telegram.</div>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button type="submit" class="btn btn-primary">Запустить задачу</button>
+        <span class="small dim" data-selection-label-2>ничего не отмечено</span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if profile_tasks %}
+{# ---------- Журнал массовых задач ---------- #}
+<div class="card">
+  <div class="card__head">
+    <div>
+      <h2>Массовые задачи</h2>
+      <div class="card__desc">Последние задачи и их прогресс — страница не обновляется сама, перезагрузите для актуального статуса</div>
+    </div>
+    <div class="card__actions"><span class="count-pill">{{ profile_tasks | length }}</span></div>
+  </div>
+  <div class="card__body is-flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Когда</th>
+            <th>Действие</th>
+            <th class="col-tight">В очереди</th>
+            <th class="col-tight">Готово</th>
+            <th class="col-tight">Ошибки</th>
+            <th class="col-tight"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set kind_labels = {'avatar': 'Аватар', 'story': 'Сторис', 'bio': 'Био'} %}
+          {% for t in profile_tasks %}
+          {% set st = task_stats.get(t.id, {}) %}
+          <tr>
+            <td class="mono dim">{{ t.created_at.strftime('%d.%m %H:%M') }}</td>
+            <td>
+              {{ kind_labels.get(t.kind.value, t.kind.value) }}
+              {% if t.text %}<span class="cell-sub truncate" style="max-width:260px; display:block">{{ t.text }}</span>{% endif %}
+            </td>
+            <td class="col-num">{{ st.get('pending', 0) or '—' }}</td>
+            <td class="col-num">{{ st.get('done', 0) or '—' }}</td>
+            <td class="col-num">
+              {% if st.get('failed') %}
+                <span class="badge failed is-plain" title="{% for it in task_failures.get(t.id, []) %}{{ it.account.label if it.account else it.account_id }}: {{ it.error }}&#10;{% endfor %}">{{ st.get('failed') }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="col-actions">
+              {% if st.get('pending') %}
+              <form method="post" action="/accounts/profile-tasks/{{ t.id }}/cancel"
+                    onsubmit="return confirm('Отменить оставшиеся позиции задачи? Уже применённые не откатываются.')">
+                <button type="submit" class="btn btn-sm btn-ghost">Отменить</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script>
 (function () {
   var master = document.getElementById('sel-all');
@@ -228,9 +408,13 @@
   var label = document.querySelector('[data-selection-label]');
   if (!boxes.length) { if (master) master.disabled = true; return; }
 
+  var label2 = document.querySelector('[data-selection-label-2]');
+
   function sync() {
     var n = boxes.filter(function (b) { return b.checked; }).length;
-    if (label) label.textContent = n ? 'отмечено: ' + n : 'ничего не отмечено';
+    var text = n ? 'отмечено: ' + n : 'ничего не отмечено';
+    if (label) label.textContent = text;
+    if (label2) label2.textContent = text;
     if (master) {
       master.checked = n === boxes.length;
       master.indeterminate = n > 0 && n < boxes.length;
@@ -245,6 +429,53 @@
   }
   boxes.forEach(function (b) { b.addEventListener('change', sync); });
   sync();
+
+  // --- Массовые действия с профилем ---
+  var ptForm = document.getElementById('profile-task-form');
+  if (ptForm) {
+    var kindSel = document.getElementById('pt-kind');
+    var mediaField = ptForm.querySelector('[data-pt-media]');
+    var mediaHint = ptForm.querySelector('[data-pt-media-hint]');
+    var fileInput = document.getElementById('pt-file');
+    var textField = ptForm.querySelector('[data-pt-text]');
+    var textLabel = ptForm.querySelector('[data-pt-text-label]');
+    var textHint = ptForm.querySelector('[data-pt-text-hint]');
+    var idsInput = ptForm.querySelector('input[name="account_ids_csv"]');
+
+    function applyKind() {
+      var kind = kindSel.value;
+      if (kind === 'avatar') {
+        mediaField.style.display = '';
+        fileInput.accept = 'image/*';
+        fileInput.required = true;
+        mediaHint.textContent = 'Изображение — будет вписано в квадрат целиком, без обрезки.';
+        textField.style.display = 'none';
+      } else if (kind === 'story') {
+        mediaField.style.display = '';
+        fileInput.accept = 'image/*,video/*';
+        fileInput.required = true;
+        mediaHint.textContent = 'Фото или видео для сторис (макс. 50 МБ).';
+        textField.style.display = '';
+        textLabel.textContent = 'Подпись к сторис (опционально)';
+        textHint.textContent = 'Один текст для всех аккаунтов.';
+      } else {
+        mediaField.style.display = 'none';
+        fileInput.required = false;
+        textField.style.display = '';
+        textLabel.textContent = 'Текст био';
+        textHint.textContent = 'Максимум 70 символов — ограничение Telegram. Один текст для всех аккаунтов.';
+      }
+    }
+    kindSel.addEventListener('change', applyKind);
+    applyKind();
+
+    ptForm.addEventListener('submit', function () {
+      idsInput.value = boxes
+        .filter(function (b) { return b.checked; })
+        .map(function (b) { return b.value; })
+        .join(',');
+    });
+  }
 })();
 </script>
 

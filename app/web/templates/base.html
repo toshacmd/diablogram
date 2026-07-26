@@ -26,6 +26,8 @@
     <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5"/>
   {%- elif name == 'parsing' -%}
     <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+  {%- elif name == 'proxies' -%}
+    <rect x="2" y="4" width="20" height="6" rx="1.5"/><rect x="2" y="14" width="20" height="6" rx="1.5"/><path d="M6 7h.01M6 17h.01"/>
   {%- endif -%}
 </svg>
 {%- endmacro %}
@@ -53,6 +55,7 @@
         <a href="/channels" class="nav-item {{ 'is-active' if active == 'channels' }}">{{ icon('channels') }} Каналы</a>
         <a href="/accounts" class="nav-item {{ 'is-active' if active == 'accounts' }}">{{ icon('accounts') }} Аккаунты</a>
         <a href="/personas" class="nav-item {{ 'is-active' if active == 'personas' }}">{{ icon('personas') }} Персоны</a>
+        <a href="/proxies" class="nav-item {{ 'is-active' if active == 'proxies' }}">{{ icon('proxies') }} Прокси</a>
         <a href="/parsing" class="nav-item {{ 'is-active' if active == 'parsing' }}">{{ icon('parsing') }} Парсинг</a>
       </div>
 

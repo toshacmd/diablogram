@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Прокси — Diablogram AI{% endblock %}
+{% block page_title %}Прокси{% endblock %}
+{% block page_sub %}
+  <div class="topbar__sub">Справочник прокси — выбираются из списка при добавлении и редактировании аккаунтов</div>
+{% endblock %}
+{% block page_actions %}
+  <a href="/accounts" class="btn btn-sm">Аккаунты</a>
+{% endblock %}
+
+{% block content %}
+
+{# ---------- Новый прокси ---------- #}
+<details class="card" {{ 'open' if not proxies }}>
+  <summary>
+    <span class="summary__icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </span>
+    <span>
+      <span class="summary__title">Добавить прокси</span>
+      <span class="summary__desc">Тип, хост, порт и учётные данные</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    <form method="post" action="/proxies/add">
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="np-label">Название</label>
+          <input id="np-label" type="text" name="label" placeholder="Прокси №1 (мобильный)" autocomplete="off">
+          <div class="field__hint">Опционально — как прокси будет виден в списках.</div>
+        </div>
+        <div class="field">
+          <label for="np-type">Тип</label>
+          <select id="np-type" name="proxy_type" required>
+            <option value="socks5">SOCKS5</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="http">HTTP</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="np-port">Порт</label>
+          <input id="np-port" type="number" name="proxy_port" required placeholder="1080">
+        </div>
+      </div>
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="np-host">Хост</label>
+          <input id="np-host" type="text" name="proxy_host" required placeholder="127.0.0.1" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="np-user">Логин</label>
+          <input id="np-user" type="text" name="proxy_username" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="np-pass">Пароль</label>
+          <input id="np-pass" type="password" name="proxy_password" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:18px">
+        <button type="submit" class="btn btn-primary">Добавить прокси</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+{# ---------- Список ---------- #}
+<div class="section-title">
+  Все прокси
+  <span class="count-pill">{{ proxies | length }}</span>
+  <span class="rest"></span>
+</div>
+
+{% for p in proxies %}
+<details class="card">
+  <summary>
+    <span class="summary__icon">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2" y="4" width="20" height="6" rx="1.5"/><rect x="2" y="14" width="20" height="6" rx="1.5"/><path d="M6 7h.01M6 17h.01"/>
+      </svg>
+    </span>
+    <span style="min-width:0">
+      <span class="summary__title">
+        {{ p.label or (p.proxy_host ~ ':' ~ p.proxy_port) }}
+        <span class="chip">{{ p.proxy_type }}</span>
+        {% if usage.get(p.id) %}
+          <span class="badge info is-plain">аккаунтов: {{ usage.get(p.id) }}</span>
+        {% endif %}
+      </span>
+      <span class="summary__desc mono">{{ p.proxy_host }}:{{ p.proxy_port }}{% if p.proxy_username %} · {{ p.proxy_username }}{% endif %}</span>
+    </span>
+    <span class="summary__chevron">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </span>
+  </summary>
+
+  <div class="card__body">
+    <form method="post" action="/proxies/{{ p.id }}/update">
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="p{{ p.id }}-label">Название</label>
+          <input id="p{{ p.id }}-label" type="text" name="label" value="{{ p.label or '' }}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="p{{ p.id }}-type">Тип</label>
+          <select id="p{{ p.id }}-type" name="proxy_type">
+            <option value="socks5" {{ 'selected' if p.proxy_type == 'socks5' }}>SOCKS5</option>
+            <option value="socks4" {{ 'selected' if p.proxy_type == 'socks4' }}>SOCKS4</option>
+            <option value="http" {{ 'selected' if p.proxy_type == 'http' }}>HTTP</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="p{{ p.id }}-port">Порт</label>
+          <input id="p{{ p.id }}-port" type="number" name="proxy_port" value="{{ p.proxy_port }}" required>
+        </div>
+      </div>
+      <div class="field-grid cols-3">
+        <div class="field">
+          <label for="p{{ p.id }}-host">Хост</label>
+          <input id="p{{ p.id }}-host" type="text" name="proxy_host" value="{{ p.proxy_host }}" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="p{{ p.id }}-user">Логин</label>
+          <input id="p{{ p.id }}-user" type="text" name="proxy_username" value="{{ p.proxy_username or '' }}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="p{{ p.id }}-pass">Пароль</label>
+          <input id="p{{ p.id }}-pass" type="password" name="proxy_password" autocomplete="new-password" placeholder="не менять">
+        </div>
+      </div>
+      <div class="field__hint" style="margin-top:6px">
+        Изменения не переносятся автоматически на аккаунты, где этот прокси уже выбран, —
+        у них остаётся копия старых значений. Чтобы применить новые, выберите прокси заново в карточке аккаунта.
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <button type="submit" class="btn btn-danger"
+                form="del-proxy-{{ p.id }}"
+                onclick="return confirm('Удалить прокси? Аккаунты, где он выбран, продолжат работать с прежними настройками.')">
+          Удалить
+        </button>
+      </div>
+    </form>
+    <form id="del-proxy-{{ p.id }}" method="post" action="/proxies/{{ p.id }}/delete"></form>
+  </div>
+</details>
+{% else %}
+<div class="card">
+  <div class="card__body">
+    <div class="empty" style="padding:28px 0">
+      <div class="empty__title">Прокси пока нет</div>
+      <div class="empty__text">Добавьте первый через форму выше — после этого его можно будет выбирать при добавлении аккаунтов.</div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% endblock %}
