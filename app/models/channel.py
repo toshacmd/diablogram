@@ -3,7 +3,7 @@ import datetime as dt
 from sqlalchemy import BigInteger, Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class Channel(Base):
@@ -23,7 +23,7 @@ class Channel(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     assignments: Mapped[list["AccountChannelAssignment"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"

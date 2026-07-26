@@ -3,7 +3,7 @@ import datetime as dt
 from sqlalchemy import DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ChannelBan(Base):
@@ -17,7 +17,7 @@ class ChannelBan(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"))
     reason: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     account: Mapped["Account"] = relationship()
     channel: Mapped["Channel"] = relationship()

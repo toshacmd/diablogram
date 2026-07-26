@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete as sa_delete
@@ -8,6 +10,7 @@ from app.db import async_session_factory
 from app.models import Account, AccountChannelAssignment, Channel, ChannelBan, CommentLog
 from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import TelegramManager, extract_invite_hash, resolve_channel_standalone
+from app.web.flash import flash_redirect
 from app.web.templating import templates
 
 router = APIRouter()
@@ -55,7 +58,7 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
             flash = f"Аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин), попробуйте позже"
             return RedirectResponse(f"/channels?flash={flash}", status_code=303)
         except AccountBannedError as e:
-            return RedirectResponse(f"/channels?flash=Аккаунт заблокирован/не авторизован: {e}", status_code=303)
+            return flash_redirect("/channels", f"Аккаунт заблокирован/не авторизован: {e}")
         except JoinRequestPendingError:
             flash = (
                 "Заявка на вступление отправлена, ждёт одобрения администратора — "
@@ -63,7 +66,7 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
             )
             return RedirectResponse(f"/channels?flash={flash}", status_code=303)
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/channels?flash=Не удалось добавить канал: {e}", status_code=303)
+            return flash_redirect("/channels", f"Не удалось добавить канал: {e}")
 
         existing = (
             await session.execute(select(Channel).where(Channel.tg_channel_id == tg_channel_id))
@@ -85,12 +88,14 @@ async def add_channel(request: Request, account_id: int = Form(...), username_or
             )
         await session.commit()
 
-    return RedirectResponse(f"/channels?flash=Канал «{title}» добавлен", status_code=303)
+    return flash_redirect("/channels", f"Канал «{title}» добавлен")
 
 
 @router.post("/channels/add-bulk")
 async def add_channels_bulk(request: Request, account_id: int = Form(...), usernames: str = Form(...)):
-    raw_names = [u.strip().lstrip("@") for u in usernames.split(",")]
+    # Lists of channels usually arrive pasted as a column — accept newlines
+    # and whitespace as separators too, not only commas.
+    raw_names = [u.strip().lstrip("@") for u in re.split(r"[,\s]+", usernames)]
     seen: set[str] = set()
     names: list[str] = []
     duplicates: list[str] = []
@@ -128,9 +133,9 @@ async def add_channels_bulk(request: Request, account_id: int = Form(...), usern
             flash = f"Аккаунт временно ограничен Telegram (~{e.retry_after_seconds // 60} мин), попробуйте позже"
             return RedirectResponse(f"/channels?flash={flash}", status_code=303)
         except AccountBannedError as e:
-            return RedirectResponse(f"/channels?flash=Аккаунт заблокирован/не авторизован: {e}", status_code=303)
+            return flash_redirect("/channels", f"Аккаунт заблокирован/не авторизован: {e}")
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/channels?flash=Не удалось подключиться: {e}", status_code=303)
+            return flash_redirect("/channels", f"Не удалось подключиться: {e}")
 
         try:
             for name in names:
@@ -190,7 +195,7 @@ async def add_channels_bulk(request: Request, account_id: int = Form(...), usern
         flash += f". Заявка на вступление отправлена: {', '.join(pending)}"
     if errors:
         flash += f". Ошибки: {'; '.join(errors)}"
-    return RedirectResponse(f"/channels?flash={flash}", status_code=303)
+    return flash_redirect("/channels", flash)
 
 
 @router.post("/channels/{channel_id}/toggle")
@@ -217,4 +222,4 @@ async def delete_channel(channel_id: int):
         await session.execute(sa_delete(ChannelBan).where(ChannelBan.channel_id == channel_id))
         await session.delete(channel)
         await session.commit()
-    return RedirectResponse(f"/channels?flash=Канал «{title}» удалён", status_code=303)
+    return flash_redirect("/channels", f"Канал «{title}» удалён")

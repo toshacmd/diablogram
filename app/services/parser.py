@@ -305,6 +305,26 @@ async def _execute_parse_run(run_id: int) -> None:
         await scrape_manager.disconnect_all()
 
 
+async def reconcile_orphaned_runs() -> None:
+    """Mark stale `running` runs as failed on worker startup.
+
+    A run only executes inside this worker process — if it restarts (deploy,
+    crash) mid-run, the row stays `running` forever: the poll loop only picks
+    up `queued` rows, so nothing would ever finish or retry it. Mirrors
+    reconcile_orphaned_comments in orchestrator.py."""
+    async with async_session_factory() as session:
+        stale = (
+            await session.execute(select(ParseRun).where(ParseRun.status == ParseRunStatus.RUNNING))
+        ).scalars().all()
+        for run in stale:
+            run.status = ParseRunStatus.FAILED
+            run.status_note = "Воркер был перезапущен во время прогона — запустите прогон заново"
+            run.finished_at = dt.datetime.now(dt.timezone.utc)
+        if stale:
+            await session.commit()
+            logger.info("Marked %d orphaned running parse run(s) as failed after restart", len(stale))
+
+
 async def get_next_queued_run_id() -> int | None:
     async with async_session_factory() as session:
         run = (

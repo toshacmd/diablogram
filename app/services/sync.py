@@ -17,6 +17,7 @@ from app.models import Account, AccountChannelAssignment, AccountStatus, Channel
 from app.services import notifier
 from app.services.exceptions import AccountBannedError, AccountLimitedError, JoinRequestPendingError
 from app.services.telegram_manager import manager
+from app.services.timeutil import ensure_aware
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ _channels_without_watcher: set[int] = set()
 # channels back-to-back with no pacing (e.g. after a large "select all"
 # batch) was enough to trip Telegram's flood-wait protection.
 _JOIN_PACING_SECONDS = 3
+
+# Connecting through a dead proxy can hang far longer than the sync interval;
+# cap it so one bad account can't stall the whole cycle (watchers, joins).
+_CONNECT_TIMEOUT_SECONDS = 30
 
 
 async def refresh_connections_and_watchers() -> None:
@@ -52,19 +57,33 @@ async def refresh_connections_and_watchers() -> None:
             )
             accounts_by_id = {a.id: a for a in rows}
 
-        # Connect everything needed that isn't banned/disabled.
-        for account_id, account in accounts_by_id.items():
-            if account.status in (AccountStatus.BANNED, AccountStatus.DISABLED):
-                continue
-            if manager.is_connected(account_id):
-                continue
+        should_connect = {
+            account_id: account
+            for account_id, account in accounts_by_id.items()
+            if account.status not in (AccountStatus.BANNED, AccountStatus.DISABLED)
+        }
+
+        # Drop connections that are no longer wanted: deleted/unassigned
+        # accounts, banned/disabled ones, accounts whose channels went
+        # inactive. Without this they stayed connected until a worker restart.
+        for account_id in manager.known_account_ids():
+            if account_id not in should_connect:
+                await manager.disconnect_account(account_id)
+                logger.info("Disconnected account %s (no longer needed)", account_id)
+
+        # Connect everything needed. connect_account itself no-ops when the
+        # client is already connected with unchanged session/proxy, and
+        # rebuilds it when the panel changed them.
+        for account_id, account in should_connect.items():
             try:
-                await manager.connect_account(account)
+                await asyncio.wait_for(manager.connect_account(account), timeout=_CONNECT_TIMEOUT_SECONDS)
             except AccountBannedError as e:
                 account.status = AccountStatus.BANNED
                 account.status_note = str(e)
                 await session.commit()
                 await notifier.notify_account_banned(account.label, str(e))
+            except asyncio.TimeoutError:
+                logger.warning("Connecting account %s timed out after %ss", account_id, _CONNECT_TIMEOUT_SECONDS)
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to connect account %s", account_id)
 
@@ -115,12 +134,34 @@ async def process_pending_joins() -> None:
         )
 
         limited_this_cycle: set[int] = set()
+        now = dt.datetime.now(dt.timezone.utc)
 
         for assignment in pending:
             account = assignment.account
             channel = assignment.channel
             if not manager.is_connected(account.id) or account.id in limited_this_cycle:
                 continue  # not connected, or already flood-limited this cycle — retried next cycle
+
+            # A flood-wait from a previous cycle is still ticking — retrying
+            # before it expires just earns a fresh (often longer) flood-wait,
+            # keeping the account unusable for commenting indefinitely.
+            limited_until = ensure_aware(account.limited_until)
+            if account.status == AccountStatus.LIMITED and limited_until and limited_until > now:
+                continue
+
+            # Re-check the row is still pending right before acting: the
+            # panel's "cancel pending joins" button deletes these rows and
+            # may do so mid-cycle, while this loop is pacing through a batch.
+            still_pending = (
+                await session.execute(
+                    select(AccountChannelAssignment.id).where(
+                        AccountChannelAssignment.id == assignment.id,
+                        AccountChannelAssignment.join_status == JoinStatus.PENDING,
+                    )
+                )
+            ).scalar_one_or_none()
+            if still_pending is None:
+                continue
 
             target = channel.username or channel.tg_channel_id
             try:

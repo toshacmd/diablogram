@@ -4,7 +4,7 @@ import enum
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class AccountStatus(str, enum.Enum):
@@ -51,9 +51,9 @@ class Account(Base):
     status_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     limited_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
     assignments: Mapped[list["AccountChannelAssignment"]] = relationship(

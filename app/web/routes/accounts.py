@@ -27,6 +27,7 @@ from app.services.telegram_manager import (
     update_avatar_standalone,
     update_profile_standalone,
 )
+from app.web.flash import flash_redirect
 from app.web.templating import templates
 
 router = APIRouter()
@@ -37,6 +38,15 @@ AVATAR_DIR = Path("data/avatars")
 
 def _avatar_path(account_id: int) -> Path:
     return AVATAR_DIR / f"{account_id}.jpg"
+
+
+def _parse_proxy_port(raw: str) -> int | None:
+    """'' -> None; digits -> int; anything else -> ValueError (a typo here
+    used to surface as a bare 500)."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    return int(raw)
 
 
 @router.get("/accounts")
@@ -94,13 +104,17 @@ async def add_account(
     daily_comment_cap: int = Form(20),
     signature: str = Form(""),
 ):
+    try:
+        parsed_port = _parse_proxy_port(proxy_port)
+    except ValueError:
+        return RedirectResponse("/accounts?flash=Порт прокси должен быть числом", status_code=303)
     async with async_session_factory() as session:
         account = Account(
             label=label.strip(),
             session_string_enc=encrypt(session_string.strip()),
             proxy_type=proxy_type or None,
             proxy_host=proxy_host or None,
-            proxy_port=int(proxy_port) if proxy_port else None,
+            proxy_port=parsed_port,
             proxy_username=proxy_username or None,
             proxy_password_enc=encrypt(proxy_password) if proxy_password else None,
             persona_id=int(persona_id) if persona_id else None,
@@ -171,6 +185,10 @@ async def update_account(
     proxy_username: str = Form(""),
     proxy_password: str = Form(""),
 ):
+    try:
+        parsed_port = _parse_proxy_port(proxy_port)
+    except ValueError:
+        return RedirectResponse(f"/accounts/{account_id}?flash=Порт прокси должен быть числом", status_code=303)
     async with async_session_factory() as session:
         account = await session.get(Account, account_id)
         if account is None:
@@ -181,7 +199,7 @@ async def update_account(
         account.daily_comment_cap = daily_comment_cap
         account.proxy_type = proxy_type or None
         account.proxy_host = proxy_host or None
-        account.proxy_port = int(proxy_port) if proxy_port else None
+        account.proxy_port = parsed_port
         account.proxy_username = proxy_username or None
         if proxy_password:
             account.proxy_password_enc = encrypt(proxy_password)
@@ -231,7 +249,8 @@ async def delete_account(account_id: int):
         await session.execute(sa_delete(ChannelBan).where(ChannelBan.account_id == account_id))
         await session.delete(account)
         await session.commit()
-    return RedirectResponse(f"/accounts?flash=Аккаунт «{label}» удалён", status_code=303)
+    _avatar_path(account_id).unlink(missing_ok=True)  # don't leave orphaned cached avatars behind
+    return flash_redirect("/accounts", f"Аккаунт «{label}» удалён")
 
 
 @router.post("/accounts/{account_id}/assignments")
@@ -279,6 +298,35 @@ async def update_assignments(request: Request, account_id: int):
     return RedirectResponse(f"/accounts/{account_id}?flash={flash}", status_code=303)
 
 
+@router.post("/accounts/{account_id}/assignments/cancel-pending")
+async def cancel_pending_joins(account_id: int):
+    """Unpins every channel this account hasn't joined yet (join_status =
+    pending), stopping the background join queue for it. Escape hatch for
+    when a big batch keeps tripping flood-waits: the owner cancels the rest
+    and uses the account for commenting in the channels it did join.
+    Re-selecting the channels later re-queues the joins."""
+    async with async_session_factory() as session:
+        account = await session.get(Account, account_id)
+        if account is None:
+            return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
+        result = await session.execute(
+            sa_delete(AccountChannelAssignment).where(
+                AccountChannelAssignment.account_id == account_id,
+                AccountChannelAssignment.join_status == JoinStatus.PENDING,
+            )
+        )
+        await session.commit()
+        cancelled = result.rowcount or 0
+
+    if not cancelled:
+        return RedirectResponse(f"/accounts/{account_id}?flash=Вступлений в очереди нет", status_code=303)
+    return flash_redirect(
+        f"/accounts/{account_id}",
+        f"Отменено вступлений: {cancelled}. Эти каналы откреплены от аккаунта — "
+        "чтобы продолжить вступление позже, просто отметьте их снова и сохраните",
+    )
+
+
 @router.post("/accounts/signatures/bulk")
 async def bulk_signature(request: Request):
     form = await request.form()
@@ -317,25 +365,29 @@ async def sync_profile(account_id: int):
             return RedirectResponse("/accounts?flash=Аккаунт не найден", status_code=303)
 
         try:
-            me, avatar_bytes = await sync_profile_standalone(account)
+            me, bio, avatar_bytes = await sync_profile_standalone(account)
         except AccountLimitedError as e:
             return RedirectResponse(
                 f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
                 status_code=303,
             )
         except AccountBannedError as e:
-            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Аккаунт забанен: {e}")
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Не удалось подключиться: {e}")
 
         account.tg_user_id = me.id
         account.tg_username = me.username
         account.tg_first_name = me.first_name
         account.tg_last_name = me.last_name
-        account.tg_synced_at = dt.datetime.utcnow()
+        account.tg_bio = bio
+        account.tg_synced_at = dt.datetime.now(dt.timezone.utc)
         if avatar_bytes:
             AVATAR_DIR.mkdir(parents=True, exist_ok=True)
             _avatar_path(account_id).write_bytes(avatar_bytes)
+        else:
+            # No avatar on Telegram (anymore) — drop the stale cached file too.
+            _avatar_path(account_id).unlink(missing_ok=True)
         await session.commit()
 
     return RedirectResponse(f"/accounts/{account_id}?flash=Профиль обновлён из Telegram", status_code=303)
@@ -375,25 +427,23 @@ async def update_profile(
         try:
             me = await update_profile_standalone(account, **kwargs)
         except (UsernameOccupiedError, UsernameInvalidError, UsernameNotModifiedError) as e:
-            return RedirectResponse(
-                f"/accounts/{account_id}?flash=Не удалось изменить юзернейм: {e}", status_code=303
-            )
+            return flash_redirect(f"/accounts/{account_id}", f"Не удалось изменить юзернейм: {e}")
         except AccountLimitedError as e:
             return RedirectResponse(
                 f"/accounts/{account_id}?flash=Аккаунт временно ограничен Telegram ({e.retry_after_seconds} сек)",
                 status_code=303,
             )
         except AccountBannedError as e:
-            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Аккаунт забанен: {e}")
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Не удалось подключиться: {e}")
 
         account.tg_user_id = me.id
         account.tg_username = me.username
         account.tg_first_name = me.first_name
         account.tg_last_name = me.last_name
         account.tg_bio = bio
-        account.tg_synced_at = dt.datetime.utcnow()
+        account.tg_synced_at = dt.datetime.now(dt.timezone.utc)
         await session.commit()
 
     return RedirectResponse(f"/accounts/{account_id}?flash=Профиль в Telegram обновлён", status_code=303)
@@ -420,13 +470,13 @@ async def update_avatar(account_id: int, avatar_file: UploadFile = File(...)):
                 status_code=303,
             )
         except AccountBannedError as e:
-            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Аккаунт забанен: {e}")
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось подключиться: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Не удалось подключиться: {e}")
 
         AVATAR_DIR.mkdir(parents=True, exist_ok=True)
         _avatar_path(account_id).write_bytes(photo_bytes)
-        account.tg_synced_at = dt.datetime.utcnow()
+        account.tg_synced_at = dt.datetime.now(dt.timezone.utc)
         await session.commit()
 
     return RedirectResponse(f"/accounts/{account_id}?flash=Аватар обновлён", status_code=303)
@@ -456,8 +506,8 @@ async def post_story(account_id: int, story_file: UploadFile = File(...), captio
                 status_code=303,
             )
         except AccountBannedError as e:
-            return RedirectResponse(f"/accounts/{account_id}?flash=Аккаунт забанен: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Аккаунт забанен: {e}")
         except Exception as e:  # noqa: BLE001
-            return RedirectResponse(f"/accounts/{account_id}?flash=Не удалось опубликовать сторис: {e}", status_code=303)
+            return flash_redirect(f"/accounts/{account_id}", f"Не удалось опубликовать сторис: {e}")
 
     return RedirectResponse(f"/accounts/{account_id}?flash=Сторис опубликована", status_code=303)

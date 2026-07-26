@@ -4,7 +4,7 @@ import enum
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ParseRunStatus(str, enum.Enum):
@@ -32,7 +32,7 @@ class ParseRun(Base):
     status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     channels_found: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -59,7 +59,7 @@ class ParsedChannel(Base):
     subscriber_count: Mapped[int] = mapped_column(Integer)
     found_via: Mapped[str] = mapped_column(String(20))  # 'keyword' | 'similar'
 
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ParsedChannel {self.title!r} @{self.username}>"

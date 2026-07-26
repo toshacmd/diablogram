@@ -3,6 +3,7 @@ from both the web process and the worker process."""
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.db import async_session_factory
 from app.models import Persona
@@ -39,4 +40,10 @@ async def seed_builtin_personas() -> None:
         for name, prompt in BUILTIN_PERSONAS:
             if name not in existing_names:
                 session.add(Persona(name=name, prompt_text=prompt, is_builtin=True))
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # web and worker start simultaneously on a fresh DB — whoever
+            # loses the race hits the unique name constraint; the winner
+            # already seeded everything, so this is safe to ignore.
+            await session.rollback()

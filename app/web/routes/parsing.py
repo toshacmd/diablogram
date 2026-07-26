@@ -43,6 +43,10 @@ async def add_scrape_account(
     proxy_username: str = Form(""),
     proxy_password: str = Form(""),
 ):
+    try:
+        parsed_port = int(proxy_port) if proxy_port.strip() else None
+    except ValueError:
+        return RedirectResponse("/parsing?flash=Порт прокси должен быть числом", status_code=303)
     async with async_session_factory() as session:
         session.add(
             ScrapeAccount(
@@ -50,7 +54,7 @@ async def add_scrape_account(
                 session_string_enc=encrypt(session_string.strip()),
                 proxy_type=proxy_type or None,
                 proxy_host=proxy_host or None,
-                proxy_port=int(proxy_port) if proxy_port else None,
+                proxy_port=parsed_port,
                 proxy_username=proxy_username or None,
                 proxy_password_enc=encrypt(proxy_password) if proxy_password else None,
                 status=AccountStatus.ACTIVE,

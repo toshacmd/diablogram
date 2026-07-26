@@ -316,6 +316,15 @@
         </div>
         <div class="btn-row" style="margin-top:18px">
           <button type="submit" class="btn btn-primary">Сохранить закрепление</button>
+          {% set pending_joins = assigned.values() | selectattr('join_status.value', 'equalto', 'pending') | list %}
+          {% if pending_joins %}
+            <button type="submit" class="btn"
+                    form="cancel-pending-form"
+                    title="Каналы, в которые аккаунт ещё не вступил, будут откреплены — фоновое вступление остановится. Уже вступленные каналы не затрагиваются."
+                    onclick="return confirm('Отменить вступление в {{ pending_joins | length }} канал(ов)? Они будут откреплены от аккаунта — вступление можно возобновить позже, отметив их снова.')">
+              Отменить вступления в очереди ({{ pending_joins | length }})
+            </button>
+          {% endif %}
         </div>
         <script>
         (function () {
@@ -349,6 +358,9 @@
         </div>
       {% endif %}
     </form>
+    {# Отдельная форма для кнопки отмены выше (вложенные формы невалидны) —
+       кнопка ссылается сюда через атрибут form. #}
+    <form id="cancel-pending-form" method="post" action="/accounts/{{ account.id }}/assignments/cancel-pending"></form>
   </div>
 </div>
 

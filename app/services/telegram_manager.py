@@ -66,6 +66,10 @@ class TelegramManager:
         self._clients: dict[int, TelegramClient] = {}
         self._watchers: dict[int, int] = {}  # channel_tg_id -> account_id currently watching it
         self._handlers: dict[int, Callable] = {}  # channel_tg_id -> bound handler (for removal)
+        # account_id -> credentials the live client was built with; lets the
+        # sync loop detect a session/proxy change in the panel and reconnect
+        # instead of keeping the old client alive forever.
+        self._fingerprints: dict[int, tuple] = {}
         self._on_new_post: NewPostHandler | None = None
 
     def set_new_post_handler(self, handler: NewPostHandler) -> None:
@@ -92,25 +96,64 @@ class TelegramManager:
         session = StringSession(decrypt(account.session_string_enc))
         return TelegramClient(session, self._api_id, self._api_hash, proxy=proxy)
 
+    @staticmethod
+    def _fingerprint(account) -> tuple:
+        return (
+            account.session_string_enc,
+            account.proxy_type,
+            account.proxy_host,
+            account.proxy_port,
+            account.proxy_username,
+            account.proxy_password_enc,
+        )
+
+    def _drop_watchers_for_account(self, account_id: int) -> None:
+        """Forget watcher bookkeeping tied to this account's client. Must be
+        called whenever the client object is discarded/rebuilt — its event
+        handlers die with it, and set_watcher's "already watching" early
+        return would otherwise leave the channel silently unwatched."""
+        for channel_tg_id, watcher_id in list(self._watchers.items()):
+            if watcher_id == account_id:
+                self._watchers.pop(channel_tg_id, None)
+                self._handlers.pop(channel_tg_id, None)
+
     async def connect_account(self, account) -> None:
-        """(Re)connect a single account's client. Safe to call repeatedly."""
+        """(Re)connect a single account's client. Safe to call repeatedly.
+        Rebuilds the client if the stored session/proxy changed in the panel
+        since the last connect."""
+        fingerprint = self._fingerprint(account)
         existing = self._clients.get(account.id)
-        if existing is not None and existing.is_connected():
+        if (
+            existing is not None
+            and existing.is_connected()
+            and self._fingerprints.get(account.id) == fingerprint
+        ):
             return
         if existing is not None:
             await existing.disconnect()
+        self._clients.pop(account.id, None)
+        self._fingerprints.pop(account.id, None)
+        self._drop_watchers_for_account(account.id)
 
         client = self._build_client(account)
         await client.connect()
         if not await client.is_user_authorized():
+            await client.disconnect()  # don't leak a live socket on a dead session
             raise AccountBannedError(f"Account {account.id} session is not authorized")
         self._clients[account.id] = client
+        self._fingerprints[account.id] = fingerprint
         logger.info("Connected account %s (%s)", account.id, account.label)
 
     async def disconnect_account(self, account_id: int) -> None:
+        self._drop_watchers_for_account(account_id)
+        self._fingerprints.pop(account_id, None)
         client = self._clients.pop(account_id, None)
         if client is not None:
             await client.disconnect()
+
+    def known_account_ids(self) -> list[int]:
+        """Ids of every account this manager holds a client for (connected or not)."""
+        return list(self._clients)
 
     async def disconnect_all(self) -> None:
         for account_id in list(self._clients):
@@ -332,6 +375,18 @@ class TelegramManager:
         client = self.get_client(account_id)
         return await client.get_me()
 
+    async def get_bio(self, account_id: int) -> str | None:
+        """The account's own bio ("about"). Not part of get_me() — Telegram
+        only returns it via the full-user request."""
+        client = self.get_client(account_id)
+        try:
+            full = await client(functions.users.GetFullUserRequest(types.InputUserSelf()))
+        except FloodWaitError as e:
+            raise AccountLimitedError(e.seconds) from e
+        except (UserDeactivatedBanError, UserDeactivatedError, AuthKeyUnregisteredError) as e:
+            raise AccountBannedError(str(e)) from e
+        return full.full_user.about
+
     async def download_avatar(self, account_id: int) -> bytes | None:
         """Returns the account's current profile photo as JPEG bytes, or
         None if it has no avatar set."""
@@ -424,15 +479,16 @@ async def resolve_channel_standalone(account, username_or_link: str) -> tuple[in
         await temp.disconnect_all()
 
 
-async def sync_profile_standalone(account) -> tuple[User, bytes | None]:
-    """One-off fetch of the account's live Telegram profile + avatar, mirroring
-    resolve_channel_standalone."""
+async def sync_profile_standalone(account) -> tuple[User, str | None, bytes | None]:
+    """One-off fetch of the account's live Telegram profile + bio + avatar,
+    mirroring resolve_channel_standalone. Returns (me, bio, avatar_bytes)."""
     temp = TelegramManager()
     await temp.connect_account(account)
     try:
         me = await temp.get_me(account.id)
+        bio = await temp.get_bio(account.id)
         avatar = await temp.download_avatar(account.id)
-        return me, avatar
+        return me, bio, avatar
     finally:
         await temp.disconnect_all()
 

@@ -3,7 +3,7 @@ import datetime as dt
 from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class Persona(Base):
@@ -17,7 +17,7 @@ class Persona(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     prompt_text: Mapped[str] = mapped_column(Text)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="persona")
 

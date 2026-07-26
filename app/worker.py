@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 from app.services.orchestrator import handle_new_post, reconcile_orphaned_comments, scheduler
-from app.services.parser import execute_parse_run, get_next_queued_run_id
+from app.services.parser import execute_parse_run, get_next_queued_run_id, reconcile_orphaned_runs
 from app.services.seed import seed_builtin_personas
 from app.services.sync import refresh_connections_and_watchers
 from app.services.telegram_manager import manager
@@ -48,6 +48,7 @@ async def _parse_loop() -> None:
 async def main() -> None:
     await seed_builtin_personas()
     await reconcile_orphaned_comments()
+    await reconcile_orphaned_runs()
     manager.set_new_post_handler(handle_new_post)
     scheduler.start()
 

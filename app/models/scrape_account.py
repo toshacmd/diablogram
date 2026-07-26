@@ -3,7 +3,7 @@ import datetime as dt
 from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db import Base
+from app.db import Base, utc_now
 from app.models.account import AccountStatus
 
 
@@ -34,7 +34,7 @@ class ScrapeAccount(Base):
     status_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     limited_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ScrapeAccount {self.label!r} status={self.status}>"

@@ -5,6 +5,7 @@ per-account comment jobs -> generate -> filter -> publish -> log.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import random
@@ -30,12 +31,25 @@ from app.services.ai_generator import get_comment_generator
 from app.services.content_filter import check_text
 from app.services.exceptions import AccountBannedError, AccountLimitedError, ChannelBannedError
 from app.services.telegram_manager import manager
+from app.services.timeutil import ensure_aware
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PERSONA_PROMPT = "нейтральный, дружелюбный подписчик без выраженных особенностей речи"
 
 scheduler = AsyncIOScheduler()
+
+# Serializes comment jobs per account: without this, two jobs firing close
+# together both pass the daily-cap check before either has posted (the AI
+# generation await sits between check and send), overshooting the cap.
+_account_locks: dict[int, asyncio.Lock] = {}
+
+
+def _account_lock(account_id: int) -> asyncio.Lock:
+    lock = _account_locks.get(account_id)
+    if lock is None:
+        lock = _account_locks[account_id] = asyncio.Lock()
+    return lock
 
 
 async def _get_settings_row(session) -> GlobalSettings:
@@ -58,7 +72,8 @@ async def _is_eligible(session, account: Account) -> bool:
         return False
 
     if account.status == AccountStatus.LIMITED:
-        if account.limited_until and account.limited_until <= dt.datetime.now(dt.timezone.utc):
+        limited_until = ensure_aware(account.limited_until)
+        if limited_until and limited_until <= dt.datetime.now(dt.timezone.utc):
             account.status = AccountStatus.ACTIVE
             account.limited_until = None
             await session.commit()
@@ -175,6 +190,18 @@ async def _post_comment(
     post_message_id: int,
     post_text: str,
 ) -> None:
+    async with _account_lock(account_id):
+        await _post_comment_locked(log_id, account_id, channel_id, channel_tg_id, post_message_id, post_text)
+
+
+async def _post_comment_locked(
+    log_id: int,
+    account_id: int,
+    channel_id: int,
+    channel_tg_id: int,
+    post_message_id: int,
+    post_text: str,
+) -> None:
     async with async_session_factory() as session:
         log_entry = await session.get(CommentLog, log_id)
         account = await session.get(Account, account_id, options=[joinedload(Account.persona)])
@@ -183,11 +210,23 @@ async def _post_comment(
             return
         channel_title = channel.title if channel else str(channel_id)
 
+        if channel is None or not channel.is_active:
+            # The owner deactivated/deleted the channel during the delay —
+            # deliberate action, so no owner notification for this one.
+            log_entry.status = CommentStatus.FAILED
+            log_entry.error = "Канал отключён/удалён до публикации комментария"
+            await session.commit()
+            logger.info("Skipping comment %s: channel %s is inactive", log_id, channel_id)
+            return
+
         if not await _is_eligible(session, account):
+            # Normal attrition (cap reached, limited meanwhile) — one post
+            # scheduled on several near-cap accounts would otherwise spam a
+            # ❌ notification per skipped duplicate. Log only.
             log_entry.status = CommentStatus.FAILED
             log_entry.error = "Account no longer eligible at post time"
             await session.commit()
-            await notifier.notify_comment_result(account.label, channel_title, log_entry.status, log_entry.error)
+            logger.info("Skipping comment %s: account %s no longer eligible", log_id, account_id)
             return
 
         persona_prompt = account.persona.prompt_text if account.persona else _DEFAULT_PERSONA_PROMPT
