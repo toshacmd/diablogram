@@ -21,6 +21,7 @@ from app.models import (
     Persona,
 )
 from app.services.exceptions import AccountBannedError, AccountLimitedError
+from app.services.images import fit_avatar_to_square
 from app.services.telegram_manager import (
     post_story_standalone,
     sync_profile_standalone,
@@ -461,6 +462,17 @@ async def update_avatar(account_id: int, avatar_file: UploadFile = File(...)):
         photo_bytes = await avatar_file.read()
         if len(photo_bytes) > 10 * 1024 * 1024:
             return RedirectResponse(f"/accounts/{account_id}?flash=Файл слишком большой (макс. 10 МБ)", status_code=303)
+
+        # Telegram center-crops non-square avatars server-side (losing e.g.
+        # a caption at the top of a tall promo image) — letterbox to square
+        # before uploading so the whole image survives.
+        try:
+            photo_bytes = fit_avatar_to_square(photo_bytes)
+        except Exception:  # noqa: BLE001
+            return RedirectResponse(
+                f"/accounts/{account_id}?flash=Не удалось обработать изображение — файл повреждён или формат не поддерживается",
+                status_code=303,
+            )
 
         try:
             await update_avatar_standalone(account, photo_bytes)
